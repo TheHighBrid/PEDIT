@@ -10,13 +10,18 @@ from fastapi.testclient import TestClient
 from app.editor import Edit, EditError, edit_pdf, parse_instructions
 from app.main import app
 
-FONT_PATH = '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+FONT_PATH = next((p for p in [
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+    '/System/Library/Fonts/Supplemental/Arial.ttf',
+    '/Library/Fonts/Arial.ttf',
+    'C:/Windows/Fonts/arial.ttf',
+] if os.path.isfile(p)), None)
 
 
 def make_pdf(embedded=True):
     doc = fitz.open()
     page = doc.new_page(width=612, height=792)
-    if embedded:
+    if embedded and FONT_PATH:
         page.insert_font(fontname='TESTFONT', fontfile=FONT_PATH)
         name = 'TESTFONT'
     else:
@@ -131,4 +136,11 @@ def test_specified_occurrence_does_not_destroy_other_matching_text():
     assert d[0].get_text().count('2024') == 1
     assert d[0].get_text().count('2025') == 1
     d.close()
+    assert report['status'] == 'passed'
+
+
+def test_new_text_containing_original_phrase_is_valid():
+    before = make_pdf()
+    after, report = edit_pdf(before, [Edit(old='Mar 2024', new='Mar 2024 Q4')])
+    assert any('Mar 2024 Q4' in s['text'] for s in spans(after))
     assert report['status'] == 'passed'
