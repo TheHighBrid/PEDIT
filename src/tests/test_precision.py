@@ -171,3 +171,62 @@ def test_untouched_page_pixel_change_is_blocked(monkeypatch):
     monkeypatch.setattr(engine,'_apply',corrupt)
     with pytest.raises(PrecisionError,match='character content'):
         edit_pdf(make_pdf(second=True),'On page 1, replace "2025" with "2026"')
+
+
+@pytest.mark.parametrize('document_subject', ['rdf:about=""', ''])
+def test_xmp_revision_only_updates_document_subject(document_subject):
+    from integrity import XMP, PDF, RDF
+    xml=f'''<x:xmpmeta xmlns:x="adobe:ns:meta/"
+        xmlns:rdf="{RDF}" xmlns:xmp="{XMP}" xmlns:pdf="{PDF}" xmlns:brand="urn:brand">
+      <rdf:RDF>
+        <rdf:Description rdf:about="urn:source:original"
+            xmp:ModifyDate="2001-01-01T00:00:00Z" pdf:Producer="Source software">
+          <xmp:MetadataDate>2001-01-02T00:00:00Z</xmp:MetadataDate>
+        </rdf:Description>
+        <rdf:Description {document_subject} xmp:ModifyDate="2020-01-01T00:00:00Z">
+          <brand:Source><rdf:Description rdf:about="" pdf:Producer="Nested software">
+            <xmp:ModifyDate>1999-01-01T00:00:00Z</xmp:ModifyDate>
+          </rdf:Description></brand:Source>
+        </rdf:Description>
+        <rdf:Description {document_subject}><pdf:Producer>Old document software</pdf:Producer></rdf:Description>
+        <rdf:Description rdf:nodeID="source" xmp:ModifyDate="2002-01-01T00:00:00Z"/>
+        <rdf:Description rdf:ID="resource" pdf:Producer="Other resource software"/>
+      </rdf:RDF>
+    </x:xmpmeta>'''
+    before=ET.fromstring(xml)
+    with fitz.open(stream=make_pdf(),filetype='pdf') as doc:
+        doc.set_xml_metadata(xml)
+        result=edit_pdf(doc.tobytes(),'Replace "2025" with "2026"')
+    with fitz.open(stream=result['pdf'],filetype='pdf') as final:
+        after=ET.fromstring(final.get_xml_metadata())
+    rdf='{'+RDF+'}'; xmp='{'+XMP+'}'; pdf='{'+PDF+'}'
+    original_descriptions=before.find(rdf+'RDF').findall(rdf+'Description')
+    descriptions=after.find(rdf+'RDF').findall(rdf+'Description')
+    # Compare parsed trees, independent of XML namespace-prefix serialization.
+    def semantic(node):
+        return (node.tag,dict(node.attrib),(node.text or '').strip(),[semantic(c) for c in node])
+    for i in (0,3,4):
+        assert semantic(descriptions[i])==semantic(original_descriptions[i])
+    assert semantic(descriptions[1].find('{urn:brand}Source'))==semantic(original_descriptions[1].find('{urn:brand}Source'))
+    assert descriptions[1].get(xmp+'ModifyDate')!='2020-01-01T00:00:00Z'
+    assert descriptions[2].find(pdf+'Producer').text.startswith('Pedit 0.2')
+    assert descriptions[1].find(xmp+'MetadataDate') is not None
+    # Missing properties belong on the document, never the first named resource.
+    assert descriptions[0].find(pdf+'Producer') is None
+
+
+def test_xmp_named_subjects_only_get_separate_document_revision():
+    from integrity import stamp_revision, XMP, PDF, RDF
+    xml=f'''<rdf:RDF xmlns:rdf="{RDF}" xmlns:xmp="{XMP}" xmlns:pdf="{PDF}">
+      <rdf:Description rdf:about="urn:source:original" xmp:ModifyDate="2001-01-01T00:00:00Z" pdf:Producer="Source software"/>
+    </rdf:RDF>'''
+    with fitz.open(stream=make_pdf(),filetype='pdf') as doc:
+        doc.set_xml_metadata(xml)
+        _,updated=stamp_revision(doc)
+    root=ET.fromstring(updated)
+    descriptions=root.findall('{'+RDF+'}Description')
+    assert len(descriptions)==2
+    assert descriptions[0].get('{'+XMP+'}ModifyDate')=='2001-01-01T00:00:00Z'
+    assert descriptions[0].get('{'+PDF+'}Producer')=='Source software'
+    assert descriptions[1].get('{'+RDF+'}about')==''
+    assert descriptions[1].find('{'+PDF+'}Producer').text.startswith('Pedit 0.2')

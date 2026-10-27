@@ -47,9 +47,22 @@ def stamp_revision(doc):
             root = ET.fromstring(xml)
         except ET.ParseError as exc:
             raise ValueError('Malformed XMP metadata cannot be safely updated.') from exc
-        descriptions = root.findall('.//{' + RDF + '}Description')
+        rdf_tag = '{' + RDF + '}'
+        # Only direct descriptions of the packet's document subject are eligible.
+        # A recursive search would also select source resources and nested values.
+        rdf_roots = [root] if root.tag == rdf_tag + 'RDF' else root.findall(rdf_tag + 'RDF')
+        if len(rdf_roots) != 1:
+            raise ValueError('XMP metadata must contain one top-level RDF graph; edit refused.')
+        graph = rdf_roots[0]
+        descriptions = [description for description in graph.findall(rdf_tag + 'Description')
+                        if description.get(rdf_tag + 'about', '') == ''
+                        and rdf_tag + 'nodeID' not in description.attrib
+                        and rdf_tag + 'ID' not in description.attrib]
         if not descriptions:
-            raise ValueError('XMP metadata has no RDF description; edit refused.')
+            # Named subjects cannot safely be assumed to identify this document.
+            # Keep them intact and explicitly describe the document separately.
+            descriptions = [ET.SubElement(graph, rdf_tag + 'Description',
+                                          {rdf_tag + 'about': ''})]
         for namespace, name, value in (
             (XMP, 'ModifyDate', now.isoformat(timespec='seconds')),
             (XMP, 'MetadataDate', now.isoformat(timespec='seconds')),
