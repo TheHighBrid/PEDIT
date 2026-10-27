@@ -230,3 +230,54 @@ def test_xmp_named_subjects_only_get_separate_document_revision():
     assert descriptions[0].get('{'+PDF+'}Producer')=='Source software'
     assert descriptions[1].get('{'+RDF+'}about')==''
     assert descriptions[1].find('{'+PDF+'}Producer').text.startswith('Pedit 0.2')
+
+
+@pytest.mark.parametrize('property_name', ['xmp:ModifyDate', 'xmp:MetadataDate', 'pdf:Producer'])
+@pytest.mark.parametrize('representation', ['resource', 'description'])
+def test_qualified_xmp_revision_updates_value_and_preserves_qualifiers(property_name,representation):
+    from integrity import XMP, PDF, RDF
+    qualified='<rdf:value xml:lang="en">Old revision</rdf:value><brand:Evidence>Keep this qualifier</brand:Evidence>'
+    property_xml=(f'<{property_name} rdf:parseType="Resource">{qualified}</{property_name}>'
+                  if representation=='resource' else
+                  f'<{property_name}><rdf:Description>{qualified}</rdf:Description></{property_name}>')
+    xml=f'''<rdf:RDF xmlns:rdf="{RDF}" xmlns:xmp="{XMP}" xmlns:pdf="{PDF}" xmlns:brand="urn:brand">
+      <rdf:Description rdf:about="">{property_xml}</rdf:Description>
+    </rdf:RDF>'''
+    with fitz.open(stream=make_pdf(),filetype='pdf') as doc:
+        doc.set_xml_metadata(xml)
+        result=edit_pdf(doc.tobytes(),'Replace "2025" with "2026"')
+    with fitz.open(stream=result['pdf'],filetype='pdf') as final:
+        root=ET.fromstring(final.get_xml_metadata())
+    namespace,local=property_name.split(':')
+    element=root.find('./{'+RDF+'}Description/{'+({'xmp':XMP,'pdf':PDF}[namespace])+'}'+local)
+    container=element if representation=='resource' else element.find('{'+RDF+'}Description')
+    value=container.find('{'+RDF+'}value')
+    assert value.text!='Old revision'
+    assert value.text.startswith('Pedit 0.2') if namespace=='pdf' else value.text.endswith('+00:00')
+    assert value.get('{http://www.w3.org/XML/1998/namespace}lang')=='en'
+    assert container.find('{urn:brand}Evidence').text=='Keep this qualifier'
+    assert not (element.text or '').strip()
+    if representation=='resource':
+        assert element.get('{'+RDF+'}parseType')=='Resource'
+    else:
+        assert not (container.text or '').strip()
+
+
+@pytest.mark.parametrize('property_xml', [
+    '<xmp:ModifyDate rdf:parseType="Resource"><brand:Evidence>Missing value</brand:Evidence></xmp:ModifyDate>',
+    '<xmp:ModifyDate rdf:parseType="Resource"><rdf:value>One</rdf:value><rdf:value>Two</rdf:value></xmp:ModifyDate>',
+    '<xmp:ModifyDate rdf:parseType="Resource">Mixed text<rdf:value>Old</rdf:value></xmp:ModifyDate>',
+    '<xmp:ModifyDate rdf:parseType="Resource"><rdf:value rdf:resource="urn:date"/></xmp:ModifyDate>',
+    '<xmp:ModifyDate rdf:parseType="Resource"><rdf:value><rdf:Bag/></rdf:value></xmp:ModifyDate>',
+    '<xmp:ModifyDate rdf:resource="urn:date"/>',
+])
+def test_unsupported_qualified_xmp_revision_is_blocked(property_xml):
+    from integrity import XMP, RDF
+    xml=f'''<rdf:RDF xmlns:rdf="{RDF}" xmlns:xmp="{XMP}" xmlns:brand="urn:brand">
+      <rdf:Description rdf:about="">{property_xml}</rdf:Description>
+    </rdf:RDF>'''
+    with fitz.open(stream=make_pdf(),filetype='pdf') as doc:
+        doc.set_xml_metadata(xml)
+        source=doc.tobytes()
+    with pytest.raises(PrecisionError,match='Unsupported XMP revision property'):
+        edit_pdf(source,'Replace "2025" with "2026"')

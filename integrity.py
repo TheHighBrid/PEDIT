@@ -34,6 +34,41 @@ def geometry(doc):
              tuple(p.bleedbox), tuple(p.trimbox), tuple(p.artbox)) for p in doc]
 
 
+def _revision_literal(element):
+    """Locate a scalar revision value without rewriting its RDF qualifiers."""
+    rdf = '{' + RDF + '}'
+    error = 'Unsupported XMP revision property representation; edit refused.'
+
+    def literal(node):
+        allowed = {'{http://www.w3.org/XML/1998/namespace}lang', rdf + 'datatype'}
+        if len(node) or any(key not in allowed for key in node.attrib):
+            raise ValueError(error)
+        return node
+
+    if not len(element):
+        return literal(element)
+    # Qualified properties are a blank resource whose scalar is rdf:value.
+    # Writing element.text here would create mixed RDF content and a stale value.
+    if (element.text or '').strip():
+        raise ValueError(error)
+    if element.attrib == {rdf + 'parseType': 'Resource'}:
+        container = element
+    elif not element.attrib and len(element) == 1 and element[0].tag == rdf + 'Description':
+        container = element[0]
+        if container.attrib:
+            raise ValueError(error)
+    else:
+        raise ValueError(error)
+    if (container.text or '').strip() or any((child.tail or '').strip() for child in element):
+        raise ValueError(error)
+    if any((child.tail or '').strip() for child in container):
+        raise ValueError(error)
+    values = container.findall(rdf + 'value')
+    if len(values) != 1:
+        raise ValueError(error)
+    return literal(values[0])
+
+
 def stamp_revision(doc):
     """Keep authorship/creation/creator; truthfully update revision time/producer."""
     now = datetime.now(timezone.utc)
@@ -75,7 +110,7 @@ def stamp_revision(doc):
                     description.set(key, value)
                     found = True
                 for element in description.findall(key):
-                    element.text = value
+                    _revision_literal(element).text = value
                     found = True
             if not found:
                 ET.SubElement(descriptions[0], key).text = value
