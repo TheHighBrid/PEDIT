@@ -115,3 +115,20 @@ def test_api_serves_ui_and_returns_binary_result():
 def test_reject_non_pdf():
     with pytest.raises(EditError, match='not a PDF'):
         edit_pdf(b'abcdefg', [Edit(old='a', new='b')])
+
+
+def test_specified_occurrence_does_not_destroy_other_matching_text():
+    doc = fitz.open()
+    page = doc.new_page()
+    page.insert_text((40, 80), '2024', fontsize=12, fontname='helv')
+    page.insert_text((300, 80), '2024', fontsize=12, fontname='helv')
+    data = doc.tobytes()
+    doc.close()
+    with pytest.raises(EditError, match='occurs 2 times'):
+        edit_pdf(data, [Edit(old='2024', new='2025')])
+    edited, report = edit_pdf(data, [Edit(old='2024', new='2025', occurrence=2)])
+    d = fitz.open(stream=edited, filetype='pdf')
+    assert d[0].get_text().count('2024') == 1
+    assert d[0].get_text().count('2025') == 1
+    d.close()
+    assert report['status'] == 'passed'

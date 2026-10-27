@@ -343,15 +343,18 @@ def edit_pdf(data: bytes, edits: list[Edit]) -> tuple[bytes, dict]:
             verified = _document(result)
             try:
                 for i, m in enumerate(matches, 1):
-                    raw = verified[m.page_index].get_text('rawdict')
-                    text = ''.join(c['c'] for b in raw['blocks'] if b['type'] == 0
-                                   for l in b['lines'] for s in l['spans'] for c in s['chars'])
-                    if m.edit.new and m.edit.new not in text:
-                        raise EditError(f'Edit {i}: output text verification failed. PDF was not exported.')
-                    if m.edit.old != m.edit.new and m.edit.old in text and len(_span_matches(verified, m.edit)):
-                        # If same phrase remains elsewhere, this alone is not enough for failure.
-                        if not any(x.edit.old == m.edit.old and x is not m for x in matches):
-                            raise EditError(f'Edit {i}: original text is still searchable after edit.')
+                    if m.edit.new:
+                        new_hits = _span_matches(verified, Edit(old=m.edit.new, new='', page=m.page_index + 1))
+                        if not any((_bbox_union(h.selected) & m.new_rect).get_area() >
+                                   max(0.5, min(_bbox_union(h.selected).get_area(), m.new_rect.get_area()) * 0.5)
+                                   for h in new_hits):
+                            raise EditError(f'Edit {i}: replacement did not appear at the intended coordinates.')
+                    if m.edit.old != m.edit.new:
+                        old_hits = _span_matches(verified, Edit(old=m.edit.old, new='', page=m.page_index + 1))
+                        if any((_bbox_union(h.selected) & m.rect).get_area() >
+                               max(0.5, min(_bbox_union(h.selected).get_area(), m.rect.get_area()) * 0.5)
+                               for h in old_hits):
+                            raise EditError(f'Edit {i}: original text still exists in the edited region.')
                 # Compare all affected pages outside the allowed edit rectangles.
                 reports = []
                 for pi in affected:
