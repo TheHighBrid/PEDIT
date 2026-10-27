@@ -1,0 +1,173 @@
+"""Regression cases for geometry, measured typography and truthful provenance."""
+import hashlib
+import xml.etree.ElementTree as ET
+import fitz
+import pytest
+from PIL import Image
+from engine import edit_pdf, PrecisionError, _validate_untouched
+from test_engine import make_pdf
+
+
+def test_single_channel_pixel_change_is_not_hidden_by_luminance():
+    original=Image.new('RGB',(20,20),(100,100,100))
+    changed=original.copy();changed.putpixel((10,10),(101,100,100))
+    assert _validate_untouched(original,changed,[])[0] is False
+
+
+def tracked_pdf(text='2025',tracking=1.25):
+    doc=fitz.open();p=doc.new_page()
+    # Explicit PDF text state, not separate synthetic text spans.
+    p.insert_text((70,95),text,fontsize=8)
+    xref=p.get_contents()[0]
+    stream=doc.xref_stream(xref).replace(b'8 Tf',f'8 Tf {tracking} Tc'.encode())
+    doc.update_stream(xref,stream)
+    return doc.tobytes()
+
+
+def origins(data):
+    doc=fitz.open(stream=data,filetype='pdf')
+    return [c[2] for t in doc[0].get_texttrace() for c in t['chars']]
+
+
+def test_tracked_fine_print_retains_every_original_origin():
+    src=tracked_pdf()
+    out=edit_pdf(src,'Replace "2025" with "2026"')
+    for a,b in zip(origins(src),origins(out['pdf'])):
+        assert max(abs(x-y) for x,y in zip(a,b))<.001
+    assert out['edits'][0]['spacing_mode']=='original glyph origins'
+
+
+def test_different_character_count_retains_uniform_tracking():
+    src=tracked_pdf()
+    out=edit_pdf(src,'Replace "2025" with "20260"')
+    pts=origins(out['pdf'])
+    assert len(pts)==5
+    expected=fitz.Font('helv').text_length('2',fontsize=8)+1.25
+    assert pts[1][0]-pts[0][0]==pytest.approx(expected,abs=.001)
+
+
+def test_metadata_preserves_source_and_records_actual_revision():
+    doc=fitz.open(stream=make_pdf(),filetype='pdf')
+    doc.set_metadata({'author':'Designer','creator':'Original Design Tool','producer':'Original PDF Tool',
+                      'creationDate':"D:20200102030405+00'00'",'modDate':'D:20200102030405','title':'Brand guide'})
+    kind,value=doc.xref_get_key(-1,'Info');xref=int(value.split()[0])
+    doc.xref_set_key(xref,'CustomBrand','(Original brand)')
+    src=doc.tobytes();out=edit_pdf(src,'Replace "2025" with "2026"')
+    result=fitz.open(stream=out['pdf'],filetype='pdf')
+    for name in ('author','creator','creationDate','title'):
+        assert result.metadata[name]==doc.metadata[name]
+    assert result.metadata['producer'].startswith('Pedit 0.2')
+    assert result.metadata['modDate']!=doc.metadata['modDate']
+    info=int(result.xref_get_key(-1,'Info')[1].split()[0])
+    assert result.xref_get_key(info,'CustomBrand')==('string','Original brand')
+    assert out['integrity']['source_sha256']==hashlib.sha256(src).hexdigest()
+    assert out['integrity']['output_sha256']==hashlib.sha256(out['pdf']).hexdigest()
+
+
+def test_xmp_source_values_and_custom_namespaces_survive_revision():
+    doc=fitz.open(stream=make_pdf(),filetype='pdf')
+    xml='''<x:xmpmeta xmlns:x="adobe:ns:meta/" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmlns:brand="urn:brand" xmlns:pdf="http://ns.adobe.com/pdf/1.3/"><rdf:RDF><rdf:Description xmp:CreateDate="2020-01-02T00:00:00Z" xmp:ModifyDate="2020-01-02T00:00:00Z" pdf:Producer="Original tool"><brand:Collection>OVUM</brand:Collection></rdf:Description></rdf:RDF></x:xmpmeta>'''
+    doc.set_xml_metadata(xml)
+    out=edit_pdf(doc.tobytes(),'Replace "2025" with "2026"')
+    result=fitz.open(stream=out['pdf'],filetype='pdf')
+    root=ET.fromstring(result.get_xml_metadata())
+    desc=root.find('.//{http://www.w3.org/1999/02/22-rdf-syntax-ns#}Description')
+    assert desc.get('{http://ns.adobe.com/xap/1.0/}CreateDate')=='2020-01-02T00:00:00Z'
+    assert desc.get('{http://ns.adobe.com/pdf/1.3/}Producer').startswith('Pedit 0.2')
+    assert root.find('.//{urn:brand}Collection').text=='OVUM'
+
+
+def test_signature_field_blocks_even_when_not_overlapping_edit():
+    doc=fitz.open(stream=make_pdf(),filetype='pdf')
+    w=fitz.Widget();w.field_name='Approval';w.field_type=fitz.PDF_WIDGET_TYPE_SIGNATURE;w.rect=fitz.Rect(200,400,400,450)
+    doc[0].add_widget(w)
+    with pytest.raises(PrecisionError,match='signature'):
+        edit_pdf(doc.tobytes(),'Replace "2025" with "2026"')
+
+
+def test_orphan_signature_dictionary_is_detected():
+    doc=fitz.open(stream=make_pdf(),filetype='pdf')
+    xref=doc.get_new_xref();doc.update_object(xref,'<< /Type /Sig /ByteRange [0 100 200 300] >>')
+    with pytest.raises(PrecisionError,match='signature'):
+        edit_pdf(doc.tobytes(),'Replace "2025" with "2026"')
+
+
+def test_stroked_text_is_refused_instead_of_silently_filled():
+    doc=fitz.open();p=doc.new_page();p.insert_text((70,95),'2025',render_mode=1)
+    with pytest.raises(PrecisionError,match='Stroked'):
+        edit_pdf(doc.tobytes(),'Replace "2025" with "2026"')
+
+
+def test_tables_branding_boxes_and_all_page_previews():
+    doc=fitz.open(stream=make_pdf(second=True),filetype='pdf')
+    for p in doc:
+        p.draw_line((50,110),(500,110),color=(.1,.2,.3),width=.25)
+        p.insert_text((70,180),'TM / Fine print 2025',fontsize=5)
+        p.set_trimbox(fitz.Rect(10,10,600,780))
+    src=doc.tobytes();out=edit_pdf(src,'Replace all "2025" with "2026"')
+    final=fitz.open(stream=out['pdf'],filetype='pdf')
+    assert out['integrity']['pages_verified']==2
+    assert [x['page'] for x in out['previews']]==[1,2]
+    assert all(a.trimbox==b.trimbox for a,b in zip(doc,final))
+    assert len(final[0].get_drawings())==len(doc[0].get_drawings())
+
+
+def test_wider_letters_use_original_tracking_instead_of_stretched_gaps():
+    doc=fitz.open();p=doc.new_page();p.insert_text((70,95),'iiii',fontsize=11)
+    out=edit_pdf(doc.tobytes(),'Replace "iiii" with "WWWW"')
+    pts=origins(out['pdf'])
+    assert pts[1][0]-pts[0][0]==pytest.approx(fitz.Font('helv').text_length('W',fontsize=11),abs=.001)
+    assert out['edits'][0]['spacing_mode']=='measured uniform tracking'
+
+
+def test_secondary_poppler_renderer_preserves_unaffected_pixels(tmp_path):
+    import shutil
+    import subprocess
+    if not shutil.which('pdftoppm'):
+        pytest.skip('Poppler is not installed')
+    src=make_pdf(embedded=True)
+    out=edit_pdf(src,'Replace "2025" with "2026"')
+    for name,data in [('source',src),('edited',out['pdf'])]:
+        path=tmp_path/(name+'.pdf');path.write_bytes(data)
+        subprocess.run(['pdftoppm','-r','300','-png','-singlefile',str(path),str(tmp_path/name)],check=True,capture_output=True)
+    with fitz.open(stream=src,filetype='pdf') as doc:
+        rect=doc[0].search_for('2025')[0]
+    with Image.open(tmp_path/'source.png') as before, Image.open(tmp_path/'edited.png') as after:
+        assert _validate_untouched(before.convert('RGB'),after.convert('RGB'),[rect])[0]
+
+
+def test_unrelated_logo_link_annotation_and_attachment_preserved():
+    doc=fitz.open(stream=make_pdf(),filetype='pdf');p=doc[0]
+    image=Image.new('RGB',(30,30),(20,100,200))
+    import io
+    buf=io.BytesIO();image.save(buf,format='PNG')
+    p.insert_image(fitz.Rect(400,60,450,100),stream=buf.getvalue())
+    p.insert_link({'kind':fitz.LINK_URI,'from':fitz.Rect(70,300,200,320),'uri':'https://example.com/'})
+    p.add_text_annot((400,300),'Review note')
+    doc.embfile_add('brand.txt',b'Brand source data')
+    doc.set_toc([[1,'Brand guide',1]])
+    result=edit_pdf(doc.tobytes(),'Replace "2025" with "2026"')
+    final=fitz.open(stream=result['pdf'],filetype='pdf')
+    assert final[0].get_links()[0]['uri']=='https://example.com/'
+    assert next(final[0].annots()).info['content']=='Review note'
+    assert final.embfile_get('brand.txt')==b'Brand source data'
+    assert final.get_toc()==[[1,'Brand guide',1]]
+
+
+def test_inexact_font_reconstruction_is_blocked(monkeypatch):
+    import engine
+    monkeypatch.setattr(engine,'_resolve_font',lambda *args: ('cour',b'',fitz.Font('cour')))
+    with pytest.raises(PrecisionError,match='pixel-for-pixel'):
+        edit_pdf(make_pdf(text='2025'),'Replace "2025" with "2026"')
+
+
+def test_untouched_page_pixel_change_is_blocked(monkeypatch):
+    import engine
+    apply=engine._apply
+    def corrupt(page,targets,reconstruct=False):
+        apply(page,targets,reconstruct)
+        if not reconstruct:
+            page.parent[1].insert_text((300,300),'Unexpected change')
+    monkeypatch.setattr(engine,'_apply',corrupt)
+    with pytest.raises(PrecisionError,match='character content'):
+        edit_pdf(make_pdf(second=True),'On page 1, replace "2025" with "2026"')

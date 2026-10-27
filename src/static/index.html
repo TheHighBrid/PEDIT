@@ -59,7 +59,7 @@
 <body>
 <header><div class="logo">PRECISION<span>PDF.</span></div><div class="pill">LOCAL-FIRST / NO AI REQUIRED</div></header>
 <main>
-  <div class="eyebrow">DOCUMENT SURGERY / V 0.1</div>
+  <div class="eyebrow">DOCUMENT SURGERY / V 0.2</div>
   <h1>Edit with proof.</h1>
   <p class="tag">Same document. Carefully changed. Preserve original typography, placement and everything surrounding your edit, with a visual verification gate before export.</p>
   <div class="workbench">
@@ -71,10 +71,10 @@
       <div class="hint">Use one instruction per line. Exact quoted text is required. If text occurs multiple times, specify its page or use “Replace all”. Unsupported edits are blocked, not guessed.</div>
       <button class="submit" id="submit"><span id="buttonText">Apply precise edits</span><span>↗</span></button>
       <div class="error" role="alert" id="error"></div>
-      <div class="audit" id="audit"><strong>✓ Visual verification passed</strong><p id="auditMessage"></p><div class="records" id="records"></div></div>
+      <div class="audit" id="audit"><strong>✓ Visual verification passed</strong><p id="auditMessage"></p><p id="integrityMessage"></p><p id="limitations"></p><p><a id="report" href="#">Download verification report ↓</a></p><div class="records" id="records"></div></div>
     </section>
     <section class="panel preview-panel">
-      <div class="preview-header"><h2>03. Inspect & export</h2><div class="state" id="state">AWAITING DOCUMENT</div></div>
+      <div class="preview-header"><h2>03. Inspect & export</h2><select id="previewPage" aria-label="Select edited page" hidden></select><div class="state" id="state">AWAITING DOCUMENT</div></div>
       <div class="compare" id="compare"><div class="empty" id="empty"><div class="paperstack">▤</div>Before / after will appear here.<br>Drag the divider to inspect changes.</div>
         <div class="layers" id="layers"><div class="under"><img id="after" alt="Edited document preview"></div><div class="over" id="over"><img id="before" alt="Original document preview"></div><div class="split" id="split"></div><input id="slider" type="range" min="0" max="100" value="50" aria-label="Compare before and after"></div>
       </div>
@@ -82,14 +82,19 @@
     </section>
   </div>
 </main>
-<footer>PRECISION GUARANTEE: UNTOUCHED PIXELS ARE VERIFIED AT 144 DPI. FONT-SUBSET, SCANNED, ROTATED, OR OVERFLOWING TEXT IS REJECTED WHEN EXACT EDITING CANNOT BE VERIFIED. FILES REMAIN ON YOUR LOCAL SERVER.</footer>
+<footer>VERIFICATION: UNAFFECTED PIXELS ARE COMPARED AT 300 DPI USING MUPDF. SOURCE TYPOGRAPHY MUST PASS AN EXACT RECONSTRUCTION TEST. UNSUPPORTED AND SIGNED DOCUMENTS ARE BLOCKED. SOURCE AUTHORSHIP IS RETAINED; THE EDIT DATE AND SOFTWARE ARE RECORDED. RENDERER AND CONFORMANCE LIMITATIONS APPLY. FILES REMAIN ON YOUR LOCAL SERVER.</footer>
 <script>
 const byId=id=>document.getElementById(id), $=byId;
+let previews=[];
+function invalidate(){ $('download').style.display='none';$('audit').style.display='none';$('layers').style.display='none';$('empty').style.display='block';$('previewPage').hidden=true;$('state').textContent='AWAITING VALIDATION'; }
+function showPage(i){const p=previews[i];$('before').src=p.before_image;$('after').src=p.after_image;$('state').textContent='VALIDATED / PAGE '+p.page;}
+$('previewPage').addEventListener('change',e=>showPage(Number(e.target.value)));
 const file=$('file'), prompt=$('prompt'), error=$('error'), button=$('submit');
-file.addEventListener('change',()=>{$('fileName').textContent=file.files[0]?.name||'Drop your PDF here or browse'});
+prompt.addEventListener('input',invalidate);
+file.addEventListener('change',()=>{invalidate();$('fileName').textContent=file.files[0]?.name||'Drop your PDF here or browse'});
 for(const evt of ['dragover','dragenter']) $('drop').addEventListener(evt,e=>{e.preventDefault();$('drop').classList.add('drag')});
 for(const evt of ['dragleave','drop']) $('drop').addEventListener(evt,e=>{e.preventDefault();$('drop').classList.remove('drag')});
-$('drop').addEventListener('drop',e=>{if(e.dataTransfer.files.length){file.files=e.dataTransfer.files;$('fileName').textContent=file.files[0].name}});
+$('drop').addEventListener('drop',e=>{if(!button.disabled && e.dataTransfer.files.length){invalidate();file.files=e.dataTransfer.files;$('fileName').textContent=file.files[0].name}});
 $('slider').addEventListener('input', e=>{const x=e.target.value;$('over').style.clipPath=`inset(0 ${100-x}% 0 0)`;$('split').style.left=x+'%'});
 function fail(msg){error.textContent=msg;error.style.display='block';$('state').textContent='EDIT BLOCKED';$('audit').style.display='none';$('download').style.display='none'}
 button.addEventListener('click',async()=>{
@@ -97,18 +102,23 @@ button.addEventListener('click',async()=>{
   if(!file.files.length)return fail('Select an original PDF first.');
   if(!prompt.value.trim())return fail('Enter at least one replacement instruction.');
   const form=new FormData();form.append('file',file.files[0]);form.append('instructions',prompt.value);
-  button.disabled=true;$('buttonText').textContent='Inspecting and validating…';$('state').textContent='PROCESSING';
+  file.disabled=true;prompt.disabled=true;button.disabled=true;$('buttonText').textContent='Inspecting and validating…';$('state').textContent='PROCESSING';
   try{
     const response=await fetch('/api/edit',{method:'POST',body:form});const data=await response.json();
     if(!response.ok)throw Error(typeof data.detail==='string'?data.detail:'Unable to process PDF.');
-    $('before').src=data.before_image;$('after').src=data.after_image;
+    previews=data.previews;
+    $('previewPage').replaceChildren(...previews.map((p,i)=>{const o=document.createElement('option');o.value=i;o.textContent='Page '+p.page;return o}));
+    $('previewPage').hidden=previews.length<2;showPage(0);
     $('empty').style.display='none';$('layers').style.display='block';$('state').textContent='VALIDATED / PAGE '+data.preview_page;
     $('results').textContent=data.edits.length+' edits applied · '+data.pages+' pages retained · unchanged regions verified';
     $('auditMessage').textContent=data.validation;
+    $('integrityMessage').textContent='Original author, creation date and creator retained. Revision date and Pedit producer recorded. '+data.integrity.signature_status;
+    $('limitations').textContent=data.limitation;
+    $('report').href=data.report_url;
     $('records').textContent=data.edits.map(x=>`P${x.page}: “${x.old}” → “${x.new}” · ${x.font} ${x.font_size}pt · ${x.font_color}`).join('\n');
     $('records').style.whiteSpace='pre-line';$('audit').style.display='block';
     $('download').href=data.download_url;$('download').style.display='inline-block';
-  }catch(e){fail(e.message||'Unexpected error.')}finally{button.disabled=false;$('buttonText').textContent='Apply precise edits';}
+  }catch(e){fail(e.message||'Unexpected error.')}finally{file.disabled=false;prompt.disabled=false;button.disabled=false;$('buttonText').textContent='Apply precise edits';}
 });
 </script>
 </body></html>
