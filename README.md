@@ -1,58 +1,71 @@
-# Pedit
+# PrecisionPDF (local-first proof-of-concept)
 
-**Alter the text. Not the document.**
+A small web app for conservative, typography-aware editing of **existing, digitally-generated PDFs**.
 
-Pedit is a preservation-first PDF editor. Upload an original PDF, enter exact changes, preview the before/after pages, inspect the regression report, and download the modified PDF.
+**Workflow:** Upload PDF → write plain-English `replace "old" with "new"` instructions → view visual before/after → download only if verification passes. All operations run locally without external AI, accounts, or API keys.
 
-### What works in v0.1
+## Start
 
-- Replace or remove **selectable, horizontal text contained in one PDF text span**.
-- Preserve the original text's **embedded font program** (or a standard Base-14 font), size, RGB color, and baseline.
-- Preserve the original *right edge* for right-column values such as résumé dates (automatically or explicitly).
-- Keep untouched page content in place; apply localized redaction, not whole-page reconstruction.
-- Reject missing/ambiguous targets, unsupported fonts/glyphs, custom tracking, text collisions, and edge overflow.
-- Verify the replacement remains searchable, the old text is removed, and rendered pixels outside replacement zones remain unchanged (strict threshold).
-- Compare original and edited renderings using a blend slider before download.
-- No API keys, cloud storage, or LLM are required. Documents are processed in memory.
-
-### Run locally
-
-Requires Python 3.11 or newer.
+Requires Python 3.10+.
 
 ```bash
+cd PrecisionPDF
 python -m venv .venv
-source .venv/bin/activate             # Windows: .venv\Scripts\activate
+source .venv/bin/activate    # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-uvicorn app.main:app --host 127.0.0.1 --port 8000
+uvicorn app:app --host 127.0.0.1 --port 8000
 ```
 
-Open http://127.0.0.1:8000. To run tests: `pip install -r requirements-dev.txt && pytest -q`.
+Open http://127.0.0.1:8000
 
-### Editing instructions
+**macOS shortcut:** If you have Python 3.10+, you can double-click `start_mac.command` (or launch it in Terminal). It creates a local virtual environment, installs dependencies, starts the server and opens your browser. Keep the Terminal window open while using the app. The first launch needs internet to install dependencies. If macOS blocks the downloaded script, run it explicitly from Terminal instead.
 
-Use the UI to enter the exact source and replacement, optionally page and alignment. Leave the new text blank to remove the original text. You can also enter multiple newline-separated instructions:
+## Supported instructions
 
 ```text
-replace "Mar 2024 - Dec 2024" with "Mar 2024 - Dec 2025"
-on page 1 replace "EDUCATION & SYSTEMS" with "EDUCATION"
-remove "BILINGUAL ENGLISH/FRENCH"
+Replace "2025" with "2026"
+On page 2, replace "Draft" with "Final"
+Replace all "CONFIDENTIAL" with "PUBLIC"
 ```
 
-By default, a text target must occur only once. Specify a page number or match occurrence when needed. No guesswork.
+One line per instruction. Matches must be contiguous within a single PDF text span. Repeated matches need a page, or an explicit **Replace all** directive.
 
-### Reality check
+## What is actually preserved and verified
 
-PDFs are *drawing instructions*, not editable Word documents. Exact in-place edits cannot be guaranteed for arbitrary PDFs. Pedit v0.1 only accepts safe single-span text. Replacing text changes the original content stream, even though output is visually validated. This version does **not** support scanned pages, OCR, image-based text, rotated/skewed text, reflow, multi-span selections, custom color spaces, embedded font glyphs missing from the source, or advanced transparency. Upload the **actual PDF**, not a screenshot.
+- Reads original font, font size, fill color, individual character bounds and baseline.
+- Uses the **same embedded font program** where extractable and glyphs are present, or same PDF Base-14 standard font.
+- Places replacement text at its original glyph baseline, and refuses missing glyphs or collisions with surrounding text.
+- Redacts the selected original text as actual PDF text, rather than painting opaque white over it. Text outside the target region is preserved.
+- Visual regression at 144 DPI of *every modified page*, excluding only edit rectangles and a small antialiasing margin, must be pixel-identical.
+- Checks that the new text is selectable in the PDF and preserved page count.
+- Original upload is never overwritten.
 
-Font matching is not a promise of perfect metrics for every PDF. Pedit fails closed rather than silently using a replacement font or decreasing type size. The pixel regression is intentionally limited to text outside the editing regions; users should visually verify the replacement itself before relying on the export.
+## Limits (important)
 
-**Privacy:** Files are not persisted by this app and are not sent to any third-party AI service. If you deploy publicly, add authentication, rate limits, request/CPU timeouts and PDF sandboxing first.
+This MVP is not a universal, pixel-perfect editor. PDF is an output-graphics format, not a reliably editable layout model. Some PDFs contain embedded subsets lacking desired glyphs, irregular kerning, image-only text, inaccessible fonts, transparency, rotated letters, or multi-span words. This version deliberately **rejects** ambiguous or unsafe edits, rather than silently using a lookalike font, shifting the layout, or leaving a ghosted previous value.
 
-### Stack
+Replacing one word of a larger run may change the pixels within its edited region, including antialiasing. Visual validation of unaffected areas at 144 DPI does not guarantee identical appearance in all renderers, or that modified words use exactly the original kerning. It does not check tagged-PDF accessibility, hyperlink preservation within edits, digital signatures, color-managed CMYK equivalence, PDF/A conformance, encrypted PDFs, or safety of arbitrary uploads against unknown parser vulnerabilities. Original PDF digital signatures will generally be invalidated by editing. This version is for trusted local documents and human review, not a public internet service.
 
-- FastAPI + PyMuPDF backend
-- Plain HTML/CSS/JS frontend, no build tools
-- Pillow image-based regression comparison
-- Pytest validation suite
+## Security/privacy
 
-**License:** no license selected yet. The repository owner should choose an explicit license before external redistribution.
+Files are processed locally. Download files are placed in the machine's OS temp directory and URLs expire after one hour (old temp files are not automatically vacuumed). If exposing the app to the internet, add authentication, sandboxing, upload constraints, malware scanning, isolation, automatic deletion, logging policy and rate limits.
+
+## Suggested next iterations
+
+1. Add a PDF content-stream editor with font encoding/kerning state preservation for **surgically replaceable** same-width text objects.
+2. Support live on-page target selection with multiple-occurrence disambiguation.
+3. Add optional AI to translate informal instructions into structured target replacements, with review before applying. AI must never redraw the PDF.
+4. Add explicit OCR/scan handling as a separate, lower-certainty workflow.
+5. Test with a multi-source corpus and compare using multiple independent renderers at 300 DPI.
+
+## Tests
+
+```bash
+pytest -q
+```
+
+`sample/` includes original and edited demo PDFs for a quick first run. `tests` creates synthetic sample PDFs to check typography metadata, replacement text, pixel invariance, ambiguity handling and collision failure.
+
+## Licensing
+
+PyMuPDF is dual-licensed under AGPL and commercial terms. Check the license obligations before using this engine in a proprietary or hosted commercial product: https://pymupdf.io/licensing

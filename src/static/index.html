@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PrecisionPDF | Edit with proof</title>
+  <style>
+    :root {--ink:#171a1a;--muted:#73756e;--paper:#f3f1eb;--cream:#e8e6df;--line:#d7d5cc;--green:#c6ff75;--panel:#fffefa;}
+    * {box-sizing:border-box} body {margin:0;background:var(--paper);color:var(--ink);font-family:Inter,Arial,Helvetica,sans-serif;-webkit-font-smoothing:antialiased}
+    header {border-bottom:1px solid var(--line);height:74px;padding:0 clamp(24px,5vw,76px);display:flex;align-items:center;justify-content:space-between}
+    .logo {font-size:19px;letter-spacing:-.9px;font-weight:800}.logo span {color:#7b8e5c}
+    .pill {font-family:ui-monospace,monospace;font-size:11px;text-transform:uppercase;letter-spacing:1px;background:#e6e7df;border:1px solid #d4d5cd;border-radius:25px;padding:8px 13px}
+    main {max-width:1370px;margin:auto;padding:58px clamp(22px,5vw,76px) 64px}
+    .eyebrow {font-family:ui-monospace,monospace;font-size:11px;text-transform:uppercase;letter-spacing:1.9px;color:#7d806f}
+    h1 {font-weight:650;font-size:clamp(42px,6vw,78px);line-height:1.0;letter-spacing:-4px;margin:20px 0 16px}
+    .tag {margin:0 0 46px;color:#64665f;font-size:17px;line-height:1.5;max-width:710px}
+    .workbench {display:grid;grid-template-columns: minmax(310px,.82fr) minmax(400px,1.18fr);gap:22px}
+    .panel {background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:24px}
+    .topline {display:flex;align-items:center;justify-content:space-between;margin-bottom:22px}
+    .overline {font:11px ui-monospace,monospace;letter-spacing:1.2px;color:#7b7c76}
+    h2 {font-size:16px;letter-spacing:-.3px;margin:0;font-weight:650}
+    .drop {padding:31px 18px;border:1.5px dashed #b9baae;border-radius:8px;background:#f9f9f3;cursor:pointer;text-align:center;position:relative;transition:.2s}
+    .drop:hover,.drop.drag {border-color:#657b4d;background:#f1f5e9}
+    .drop input {position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer}
+    .upload-ico {margin:0 auto 14px;width:40px;height:40px;border:1px solid #c8c9bf;border-radius:9px;display:grid;place-items:center;font-size:24px}
+    .drop strong {display:block;font-size:13px;word-break:break-word}.drop small {display:block;font-size:11px;color:#888a7e;margin-top:8px}
+    label {display:block;margin:27px 0 11px;font-weight:600;font-size:13px}
+    textarea {width:100%;min-height:151px;resize:vertical;border:1px solid var(--line);border-radius:7px;background:white;padding:15px;line-height:1.8;color:var(--ink);font:13px ui-monospace,SFMono-Regular,Consolas,monospace;outline:none}
+    textarea:focus {border-color:#8ca568;box-shadow:0 0 0 3px #d8ecbe}
+    .hint {font-size:11px;color:#898b82;line-height:1.6;margin:10px 0 20px}
+    .submit {background:var(--ink);color:white;font-weight:600;width:100%;padding:15px 18px;border:0;border-radius:7px;cursor:pointer;display:flex;align-items:center;justify-content:space-between;transition:.2s}
+    .submit:hover {background:#333a34}.submit:disabled {opacity:.6;cursor:wait}
+    .error {color:#8e3327;background:#ffefec;border:1px solid #efc7be;border-radius:6px;padding:11px 13px;font-size:12px;line-height:1.5;margin-top:16px;display:none}
+    .preview-panel {display:flex;flex-direction:column;min-height:560px}
+    .preview-header {display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:20px;flex-wrap:wrap}
+    .state {font:11px ui-monospace,monospace;color:#7c806e}
+    .compare {position:relative;flex:1;min-height:385px;background:#e8e8e3;border:1px solid #deded6;border-radius:7px;display:flex;align-items:center;justify-content:center;overflow:hidden}
+    .empty {text-align:center;color:#888b81;line-height:1.9;font-size:13px;padding:40px}
+    .paperstack {font-size:45px;margin-bottom:15px;opacity:.55}
+    .compare img {object-fit:contain;max-width:100%;max-height:600px;width:100%;height:100%;display:block}
+    .layers {position:absolute;inset:0;display:none}
+    .layers .under,.layers .over {position:absolute;inset:0;display:flex;align-items:center;justify-content:center}
+    .layers .over {clip-path:inset(0 50% 0 0)}
+    .layers .split {position:absolute;top:0;bottom:0;left:50%;background:#b3ed6d;width:2px;pointer-events:none}
+    .layers .split:after {content:'↔';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#b3ed6d;color:#17220e;border:4px solid white;box-shadow:0 4px 15px #0002;width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-size:18px}
+    .layers input[type=range] {position:absolute;z-index:4;inset:0;width:100%;height:100%;margin:0;opacity:0;cursor:ew-resize}
+    .preview-foot {display:flex;align-items:center;justify-content:space-between;gap:15px;padding-top:18px;flex-wrap:wrap}
+    .results {font:11px ui-monospace,monospace;color:#787a73;flex:1;line-height:1.6}
+    .download {background:var(--green);color:#15210b;display:none;padding:12px 17px;border-radius:6px;text-decoration:none;font-size:12px;font-weight:750;white-space:nowrap}
+    .download:hover {background:#acff4c}
+    .audit {display:none;margin-top:18px;background:#f6f8ef;border:1px solid #e0e8d3;padding:15px;border-radius:7px}
+    .audit strong {font-size:11px;color:#4d703b;letter-spacing:.5px;text-transform:uppercase}
+    .audit p {font-size:12px;color:#646c5d;line-height:1.6;margin:10px 0 0}
+    .records {margin-top:12px;font:11px ui-monospace,monospace;line-height:1.65;color:#525c4b}
+    footer {padding:0 clamp(24px,5vw,76px) 30px;max-width:1370px;margin:auto;font:11px ui-monospace,monospace;color:#888980;line-height:1.7}
+    @media(max-width:900px) {.workbench{grid-template-columns:1fr}.preview-panel{min-height:440px}h1{letter-spacing:-2px}main{padding-top:43px}}
+  </style>
+</head>
+<body>
+<header><div class="logo">PRECISION<span>PDF.</span></div><div class="pill">LOCAL-FIRST / NO AI REQUIRED</div></header>
+<main>
+  <div class="eyebrow">DOCUMENT SURGERY / V 0.1</div>
+  <h1>Edit with proof.</h1>
+  <p class="tag">Same document. Carefully changed. Preserve original typography, placement and everything surrounding your edit, with a visual verification gate before export.</p>
+  <div class="workbench">
+    <section class="panel">
+      <div class="topline"><h2>01. Original document</h2><div class="overline">PDF / MAX 25 MB</div></div>
+      <div class="drop" id="drop"><input type="file" id="file" accept="application/pdf,.pdf" aria-label="Upload PDF"><div class="upload-ico">↑</div><strong id="fileName">Drop your PDF here or browse</strong><small>Original file is never overwritten</small></div>
+      <label for="prompt">02. Edit instructions</label>
+      <textarea id="prompt" spellcheck="false" placeholder='Replace "2025" with "2026"&#10;On page 2, replace "Draft" with "Final"'></textarea>
+      <div class="hint">Use one instruction per line. Exact quoted text is required. If text occurs multiple times, specify its page or use “Replace all”. Unsupported edits are blocked, not guessed.</div>
+      <button class="submit" id="submit"><span id="buttonText">Apply precise edits</span><span>↗</span></button>
+      <div class="error" role="alert" id="error"></div>
+      <div class="audit" id="audit"><strong>✓ Visual verification passed</strong><p id="auditMessage"></p><div class="records" id="records"></div></div>
+    </section>
+    <section class="panel preview-panel">
+      <div class="preview-header"><h2>03. Inspect & export</h2><div class="state" id="state">AWAITING DOCUMENT</div></div>
+      <div class="compare" id="compare"><div class="empty" id="empty"><div class="paperstack">▤</div>Before / after will appear here.<br>Drag the divider to inspect changes.</div>
+        <div class="layers" id="layers"><div class="under"><img id="after" alt="Edited document preview"></div><div class="over" id="over"><img id="before" alt="Original document preview"></div><div class="split" id="split"></div><input id="slider" type="range" min="0" max="100" value="50" aria-label="Compare before and after"></div>
+      </div>
+      <div class="preview-foot"><div class="results" id="results">Only successfully validated edits are downloadable.</div><a class="download" id="download" href="#">Download edited PDF ↓</a></div>
+    </section>
+  </div>
+</main>
+<footer>PRECISION GUARANTEE: UNTOUCHED PIXELS ARE VERIFIED AT 144 DPI. FONT-SUBSET, SCANNED, ROTATED, OR OVERFLOWING TEXT IS REJECTED WHEN EXACT EDITING CANNOT BE VERIFIED. FILES REMAIN ON YOUR LOCAL SERVER.</footer>
+<script>
+const byId=id=>document.getElementById(id), $=byId;
+const file=$('file'), prompt=$('prompt'), error=$('error'), button=$('submit');
+file.addEventListener('change',()=>{$('fileName').textContent=file.files[0]?.name||'Drop your PDF here or browse'});
+for(const evt of ['dragover','dragenter']) $('drop').addEventListener(evt,e=>{e.preventDefault();$('drop').classList.add('drag')});
+for(const evt of ['dragleave','drop']) $('drop').addEventListener(evt,e=>{e.preventDefault();$('drop').classList.remove('drag')});
+$('drop').addEventListener('drop',e=>{if(e.dataTransfer.files.length){file.files=e.dataTransfer.files;$('fileName').textContent=file.files[0].name}});
+$('slider').addEventListener('input', e=>{const x=e.target.value;$('over').style.clipPath=`inset(0 ${100-x}% 0 0)`;$('split').style.left=x+'%'});
+function fail(msg){error.textContent=msg;error.style.display='block';$('state').textContent='EDIT BLOCKED';$('audit').style.display='none';$('download').style.display='none'}
+button.addEventListener('click',async()=>{
+  error.style.display='none';$('download').style.display='none';$('audit').style.display='none';
+  if(!file.files.length)return fail('Select an original PDF first.');
+  if(!prompt.value.trim())return fail('Enter at least one replacement instruction.');
+  const form=new FormData();form.append('file',file.files[0]);form.append('instructions',prompt.value);
+  button.disabled=true;$('buttonText').textContent='Inspecting and validating…';$('state').textContent='PROCESSING';
+  try{
+    const response=await fetch('/api/edit',{method:'POST',body:form});const data=await response.json();
+    if(!response.ok)throw Error(typeof data.detail==='string'?data.detail:'Unable to process PDF.');
+    $('before').src=data.before_image;$('after').src=data.after_image;
+    $('empty').style.display='none';$('layers').style.display='block';$('state').textContent='VALIDATED / PAGE '+data.preview_page;
+    $('results').textContent=data.edits.length+' edits applied · '+data.pages+' pages retained · unchanged regions verified';
+    $('auditMessage').textContent=data.validation;
+    $('records').textContent=data.edits.map(x=>`P${x.page}: “${x.old}” → “${x.new}” · ${x.font} ${x.font_size}pt · ${x.font_color}`).join('\n');
+    $('records').style.whiteSpace='pre-line';$('audit').style.display='block';
+    $('download').href=data.download_url;$('download').style.display='inline-block';
+  }catch(e){fail(e.message||'Unexpected error.')}finally{button.disabled=false;$('buttonText').textContent='Apply precise edits';}
+});
+</script>
+</body></html>
