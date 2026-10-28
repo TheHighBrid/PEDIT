@@ -333,7 +333,7 @@ def _edit_pdf(data: bytes, instructions: str, resources) -> dict:
             match.font_name=font_name
             match.font_bytes=font_bytes
             match.target_length=width
-            if match.origin.x + width>original[match.page].rect.x1-2:
+            if match.origin.x + width>(original[match.page].rect * original[match.page].derotation_matrix).x1-2:
                 raise PrecisionError(f'"{edit.new}" would extend beyond page {match.page+1}.')
             target_area=fitz.Rect(match.rect)
             target_area.x1=max(target_area.x1,match.origin.x+width)
@@ -401,6 +401,7 @@ def _edit_pdf(data: bytes, instructions: str, resources) -> dict:
             rects.append(fitz.Rect(m.origin.x-2,min(m.rect.y0,m.origin.y-m.size*1.6)-1,
                                    max(m.rect.x1,m.origin.x+m.target_length)+2,
                                    max(m.rect.y1,m.origin.y+m.size*.6)+1))
+        rects=[rect * reference[p].rotation_matrix for rect in rects]
         ok, fraction=_validate_untouched(_render(reference[p]),_render(result[p]),rects)
         if not ok:
             raise PrecisionError(f'Validation failed: pixels outside the intended edit region changed on page {p+1} ({fraction:.4%}). The output has been withheld.')

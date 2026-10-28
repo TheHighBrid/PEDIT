@@ -301,3 +301,14 @@ def test_font_lookup_prefers_exact_name_before_regular_alias():
             return [(1,'n/a','Type1','Helvetica-Regular','F1',''),(2,'n/a','Type1','Helvetica','F2','')]
     name,data,font=_resolve_font([Page()],0,SimpleNamespace(font='Helvetica'))
     assert name=='helv'
+
+
+@pytest.mark.parametrize('rotation',[90,180,270])
+def test_rotated_page_masks_preserve_untouched_pixels(rotation):
+    with fitz.open(stream=make_pdf(),filetype='pdf') as doc:
+        doc[0].set_rotation(rotation)
+        source=doc.tobytes()
+    output=edit_pdf(source,'Replace "2025" with "2026"')
+    with fitz.open(stream=output['pdf'],filetype='pdf') as final:
+        assert final[0].rotation==rotation
+        assert '2026' in final[0].get_text()
