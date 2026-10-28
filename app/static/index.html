@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#141619" />
+  <title>PEDIT | Precision PDF editing</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <header class="masthead">
+    <a class="brand" href="/" aria-label="Pedit home"><span class="brandmark">P<span class="brand-dot">.</span></span><span class="brandname">PEDIT</span></a>
+    <div class="mast-right"><span class="live-dot"></span> LOCAL PRECISION ENGINE <span class="version">V0.1</span></div>
+  </header>
+  <main class="workspace">
+    <div class="intro"><div class="eyebrow"><span class="micro-square"></span> DOCUMENT ENGINEERING / 001</div>
+      <h1>Alter the text.<br><em>Not the document.</em></h1>
+      <p>Make exact replacements in a PDF while retaining the source typography, position, color, and surrounding layout. If an edit isn't safe, Pedit refuses to guess.</p>
+    </div>
+    <div class="main-grid">
+      <section class="form-panel" aria-label="Editing controls">
+        <div class="step"><span class="step-index">01</span><h2>Original PDF</h2><span class="step-side">YOUR SOURCE OF TRUTH</span></div>
+        <div class="dropzone" id="dropzone" role="button" tabindex="0" aria-label="Choose or drop a PDF">
+          <input type="file" id="fileInput" accept=".pdf,application/pdf" hidden />
+          <div class="upload-symbol">↥</div><strong id="uploadTitle">Drop your PDF here</strong>
+          <span id="uploadSubtitle">or click to browse · PDF only · max 12 MB</span>
+        </div>
+        <div class="step second-step"><span class="step-index">02</span><h2>Instructions</h2><span class="step-side">SURGICAL REPLACEMENTS</span></div>
+        <p class="field-intro">Add exact text replacements below. Quoted instructions are optional for additional changes.</p>
+        <div id="rules" class="rules"></div>
+        <button id="addRule" class="add-rule" type="button"><span>＋</span> Add another edit</button>
+        <label class="field-label" for="instructions">OR WRITE INSTRUCTIONS <span>ONE PER LINE</span></label>
+        <textarea id="instructions" rows="3" spellcheck="false" placeholder='replace "Mar 2024 - Dec 2024" with "Mar 2024 - Dec 2025"&#10;remove "BILINGUAL ENGLISH/FRENCH"'></textarea>
+        <div class="syntax-note">Exact source text is required. Use <code>on page 2 replace "old" with "new"</code> to target a page.</div>
+        <button type="button" id="run" class="run-btn"><span>Generate precision edit</span><span id="runArrow">↗</span></button>
+        <div id="message" class="message" role="status" aria-live="polite"></div>
+        <div class="privacy-note"><span>◈</span> No cloud storage, AI keys, or external API requests. PDF processing runs on this server, in memory.</div>
+      </section>
+      <section class="preview-panel" aria-label="Output preview">
+        <div class="preview-heading"><div><div class="eyebrow">VISUAL CONTROL</div><h2>Proof, not promises.</h2></div><span id="previewState" class="state-pill">AWAITING DOCUMENT</span></div>
+        <div class="preview-toolbar"><div class="toggle" role="group" aria-label="Preview mode"><button id="beforeButton" class="active" type="button">Original</button><button id="afterButton" type="button">Edited</button><button id="compareButton" type="button">Compare</button></div><span id="pageLabel">PAGE 01</span></div>
+        <div class="document-stage" id="documentStage"><div id="emptyPreview" class="empty-preview"><div class="empty-paper"><span></span><span></span><span></span><span></span><span></span></div><h3>Your document, uninterrupted.</h3><p>Upload a PDF and create an edit to inspect before/after renderings.</p></div>
+          <div id="imageViewer" class="image-viewer" hidden><img id="beforeImg" alt="Original PDF page" /><img id="afterImg" alt="Edited PDF page" /></div>
+        </div>
+        <div id="compareControls" class="compare-controls" hidden><span>ORIGINAL</span><input id="comparison" type="range" min="0" max="100" value="50" aria-label="Comparison overlay opacity" /><span>EDITED</span></div>
+        <div class="results" id="results" hidden><div class="result-title">VALIDATION REPORT <span id="validationState">PASSED</span></div><div class="metric-grid"><div class="metric"><span>REPLACEMENTS</span><strong id="changeCount">0</strong></div><div class="metric"><span>OUTSIDE-AREA PIXEL CHANGE</span><strong id="pixelCount">0</strong></div></div><div id="changeList" class="change-list"></div><p class="validation-footnote">Inspect the final PDF before using it. A pixel-level match outside edited areas does not guarantee the meaning of new text.</p><button class="download-btn" id="download" type="button">Download edited PDF <span>↓</span></button></div>
+        <div class="preview-footer"><span>NO AUTOMATIC REFLOW</span><span>FONT-LOCK MODE</span><span>PIXEL REGRESSION TEST</span></div>
+      </section>
+    </div>
+  </main>
+  <footer class="footer"><span>PEDIT / EXACTLY WHERE IT BELONGS.</span><span>BUILT FOR DOCUMENT FIDELITY</span></footer>
+</body>
+</html>

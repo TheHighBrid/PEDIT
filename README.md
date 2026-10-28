@@ -9,11 +9,11 @@ A small web app for conservative, typography-aware editing of **existing, digita
 Requires Python 3.10+.
 
 ```bash
-cd PrecisionPDF
+cd Pedit
 python -m venv .venv
 source .venv/bin/activate    # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-uvicorn app:app --host 127.0.0.1 --port 8000
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
 Open http://127.0.0.1:8000
@@ -61,7 +61,7 @@ Files are processed locally. Download files are placed in the machine's OS temp 
 ## Tests
 
 ```bash
-pytest -q
+python -m pytest -q
 ```
 
 `sample/` includes original and edited demo PDFs for a quick first run. `tests` creates synthetic sample PDFs to check typography metadata, replacement text, pixel invariance, ambiguity handling and collision failure.
@@ -69,3 +69,25 @@ pytest -q
 ## Licensing
 
 PyMuPDF is dual-licensed under AGPL and commercial terms. Check the license obligations before using this engine in a proprietary or hosted commercial product: https://pymupdf.io/licensing
+
+## Review fixes for the Pedit app branch
+
+The Pedit application in this branch starts with `python -m uvicorn app.main:app`. The root legacy `app.py` is not this branch's entry point. The macOS launcher uses the package entry point.
+
+PDF edits run in one spawned worker process per server instance, keeping ASGI health requests responsive and avoiding shared MuPDF threads. Large pages are refused before rendering: maximum 10 million square points, 20 million rendered pixels, and 16,384 pixels per side at the current verification scale.
+
+Structured edit fields validate strings, positive integer page/match values, and supported alignment. Font lookup prefers exact normalized resource names, permits only unambiguous Book/Regular aliases, and never matches font-family prefixes. Replacement rectangles are checked pairwise for collisions. Verification masks are transformed into rendered coordinates on rotated pages, while edit bounds remain in unrotated text coordinates. Stroked, fill-and-stroke, hidden, layered or transparent source text is refused when its paint state cannot be preserved. Pillow masks and histograms replace Python pixel loops without changing the existing threshold of 16.
+
+Changing the PDF, instructions, or replacement rows clears previous results and invalidates pending responses. Downloads use the submitted file name. Non-JSON server responses show an HTTP status message.
+
+Validation commands:
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m pytest -q
+node --test tests/ui.test.cjs
+```
+
+Issue coverage: #3/#9/#14 font identity; #4/#10/#15 replacement collisions; #5 stale results; #6/#11/#12 structured input validation; #13 rendering limits; #16 pixel-loop performance; #17 event-loop blocking and MuPDF isolation; #18 non-JSON errors. The selected-target removal review finding is already covered by tests for partial occurrence edits and replacements containing the original phrase.
+
+PR #2 is a separate precision-engine branch. These tests validate this branch independently; combining the implementations requires reconciling their application entry points.
