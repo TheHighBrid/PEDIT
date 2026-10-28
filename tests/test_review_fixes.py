@@ -102,3 +102,9 @@ def test_pillow_difference_counts_preserve_threshold_and_overlapping_masks():
     after.putpixel((4,0),(16,16,16))  # unchanged according to the existing threshold
     masks=[(0,0,3,3),(2,2,4,4)]
     assert _difference_counts(before,after,masks)==(8,1,2)
+
+
+def test_both_asgi_entry_points_resolve_to_the_same_application():
+    from uvicorn.importer import import_from_string
+    assert import_from_string('app:app') is app
+    assert import_from_string('app.main:app') is app
