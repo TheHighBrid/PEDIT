@@ -30,6 +30,22 @@ class Edit:
     new: str
     page: Optional[int] = None  # 1-based
     all_occurrences: bool = False
+    occurrence: Optional[int] = None
+    align: str = 'auto'
+
+    def __post_init__(self):
+        if not isinstance(self.old,str) or not isinstance(self.new,str) or not self.old or '\n' in self.old or '\n' in self.new:
+            raise PrecisionError('Edit text must be single-line strings with a nonempty original.')
+        for name in ('page','occurrence'):
+            value=getattr(self,name)
+            if value is not None and (isinstance(value,bool) or not isinstance(value,int) or value<1):
+                raise PrecisionError(f'{name} must be a positive integer.')
+        if not isinstance(self.all_occurrences,bool):
+            raise PrecisionError('all_occurrences must be a boolean.')
+        if self.old==self.new:
+            raise PrecisionError('Original and replacement text are identical.')
+        if self.align not in ('auto','left','right'):
+            raise PrecisionError('Alignment must be auto, left or right.')
 
 @dataclass
 class Match:
@@ -244,6 +260,10 @@ def _plan_typography(page, match, edit, font):
     if len(match.paint_color) not in (1,3):
         raise PrecisionError('This text color space cannot be faithfully reproduced.')
     advances=[float(font.text_length(c,fontsize=match.size)) for c in edit.old]
+    if not edit.new:
+        match.target_length=0
+        match.spacing_mode='removal'
+        return
     offsets=[match.origins[i+1].x-match.origins[i].x-advances[i]
              for i in range(len(advances)-1)]
     if any(abs(p.y-match.origin.y)>.001 for p in match.origins):
@@ -273,6 +293,14 @@ def _plan_typography(page, match, edit, font):
         if match.new_origins[i].x+new_widths[i]>match.new_origins[i+1].x+max(0,-original_overlap)+.02:
             raise PrecisionError('Replacement glyphs would overlap at the original spacing; edit refused.')
     match.target_length=match.new_origins[-1].x-match.origin.x+new_widths[-1]
+    bounds=page.rect * page.derotation_matrix
+    align=edit.align
+    if align=='auto':
+        align='right' if match.rect.x0 > bounds.width*.58 and match.rect.x1 > bounds.width*.80 else 'left'
+    if align=='right':
+        shift=match.rect.x1-(match.origin.x+match.target_length)
+        match.new_origins=[fitz.Point(p.x+shift,p.y) for p in match.new_origins]
+
 
 
 def _apply(page, targets, reconstruct=False):
@@ -289,7 +317,7 @@ def _apply(page, targets, reconstruct=False):
                              color=m.paint_color,overlay=True)
 
 
-def _edit_pdf(data: bytes, instructions: str, resources) -> dict:
+def _edit_pdf(data: bytes, instructions: str, resources, structured=None) -> dict:
     original=resources.enter_context(validate_pdf(data))
     reference=resources.enter_context(validate_pdf(data))
     if integrity.signature_present(original):
@@ -297,17 +325,26 @@ def _edit_pdf(data: bytes, instructions: str, resources) -> dict:
     source_metadata=dict(original.metadata)
     source_geometry=integrity.geometry(original)
     source_structure=integrity.structure(original)
-    edits=parse_instructions(instructions)
+    edits=parse_instructions(instructions) if instructions.strip() else []
+    if structured:
+        try: edits.extend(Edit(**item) for item in structured)
+        except (TypeError,ValueError) as exc: raise PrecisionError(f'Invalid structured edit: {exc}') from exc
+    if not edits: raise PrecisionError('Add at least one edit.')
+    if len(edits)>20: raise PrecisionError('Maximum 20 edit instructions per operation.')
     plans=[]
     occupied=[]
     for edit in edits:
         matches=_find_matches(original,edit)
         if not matches:
             raise PrecisionError(f'Could not find "{edit.old}" as continuous editable text. It may be scanned, outlined, or split across font spans.')
-        if len(matches)>1 and not edit.all_occurrences:
+        if edit.occurrence is not None and edit.all_occurrences:
+            raise PrecisionError('Choose one occurrence or all occurrences, not both.')
+        if edit.occurrence is not None and edit.occurrence>len(matches):
+            raise PrecisionError(f'Occurrence {edit.occurrence} is out of range ({len(matches)} matches).')
+        if len(matches)>1 and not edit.all_occurrences and edit.occurrence is None:
             pages=', '.join(str(m.page+1) for m in matches[:12])
             raise PrecisionError(f'"{edit.old}" appears {len(matches)} times (pages {pages}). Specify a page or use Replace all to prevent accidental changes.')
-        selected=matches if edit.all_occurrences else matches[:1]
+        selected=matches if edit.all_occurrences else [matches[edit.occurrence-1]] if edit.occurrence else matches[:1]
         for match in selected:
             if match.alpha!=255 or abs(match.direction[0]-1)>0.0001 or abs(match.direction[1])>0.0001:
                 raise PrecisionError('Transparent or rotated text cannot be matched safely in this version.')
@@ -330,13 +367,16 @@ def _edit_pdf(data: bytes, instructions: str, resources) -> dict:
                     raise PrecisionError(f'The original font "{match.font}" lacks glyph "{char}". A lookalike font would not be pixel-exact; edit refused.')
             _plan_typography(original[match.page], match, edit, font)
             width=match.target_length
+            start_x=match.new_origins[0].x if match.new_origins else match.origin.x
+            end_x=start_x+width
             match.font_name=font_name
             match.font_bytes=font_bytes
             match.target_length=width
-            if match.origin.x + width>(original[match.page].rect * original[match.page].derotation_matrix).x1-2:
+            if edit.new and (start_x<2 or end_x>(original[match.page].rect * original[match.page].derotation_matrix).x1-2):
                 raise PrecisionError(f'"{edit.new}" would extend beyond page {match.page+1}.')
             target_area=fitz.Rect(match.rect)
-            target_area.x1=max(target_area.x1,match.origin.x+width)
+            target_area.x0=min(target_area.x0,start_x)
+            target_area.x1=max(target_area.x1,end_x)
             if any(fitz.Rect(obj['from']).intersects(target_area) for obj in current_page.get_links()):
                 raise PrecisionError('Replacement would overlap a link; edit refused.')
             if any(fitz.Rect(w.rect).intersects(target_area) for w in current_page.widgets() or []):
@@ -353,10 +393,10 @@ def _edit_pdf(data: bytes, instructions: str, resources) -> dict:
                         continue
                     box=fitz.Rect(char_obj['bbox'])
                     # Compare mostly baseline-horizontal overlap; limit intrusion into other glyphs
-                    if box.x0 < match.origin.x + width - 0.4 and box.x1 > match.origin.x + 0.4:
+                    if edit.new and box.x0 < end_x - 0.4 and box.x1 > start_x + 0.4:
                         raise PrecisionError(f'"{edit.new}" would collide with existing text on page {match.page+1}. Shorten replacement or edit the whole phrase.')
             for prior in occupied:
-                if prior.page==match.page and prior.rect.intersects(match.rect):
+                if prior.page==match.page and (prior.rect.intersects(match.rect) or (prior.new_origins and match.new_origins and fitz.Rect(prior.new_origins[0].x,prior.rect.y0,prior.new_origins[0].x+prior.target_length,prior.rect.y1).intersects(fitz.Rect(start_x,match.rect.y0,end_x,match.rect.y1)))):
                     raise PrecisionError('Two edit instructions overlap the same text region.')
             occupied.append(match)
             plans.append((edit,match))
@@ -398,8 +438,8 @@ def _edit_pdf(data: bytes, instructions: str, resources) -> dict:
         rects=[]
         for e,m in plans:
             if m.page!=p: continue
-            rects.append(fitz.Rect(m.origin.x-2,min(m.rect.y0,m.origin.y-m.size*1.6)-1,
-                                   max(m.rect.x1,m.origin.x+m.target_length)+2,
+            rects.append(fitz.Rect(min(m.origin.x,m.new_origins[0].x if m.new_origins else m.origin.x)-2,min(m.rect.y0,m.origin.y-m.size*1.6)-1,
+                                   max(m.rect.x1,(m.new_origins[0].x if m.new_origins else m.origin.x)+m.target_length)+2,
                                    max(m.rect.y1,m.origin.y+m.size*.6)+1))
         rects=[rect * reference[p].rotation_matrix for rect in rects]
         ok, fraction=_validate_untouched(_render(reference[p]),_render(result[p]),rects)
@@ -412,7 +452,8 @@ def _edit_pdf(data: bytes, instructions: str, resources) -> dict:
             previews.append({'page':p+1,'before_png':bf.getvalue(),'after_png':af.getvalue()})
     # Validate text replacement outcome with new extraction, plus page count invariance
     for e,m in plans:
-        area=fitz.Rect(m.origin.x-2,m.rect.y0-4,m.origin.x+m.target_length+5,m.rect.y1+4)
+        if not e.new: continue
+        area=fitz.Rect(m.new_origins[0].x-2,m.rect.y0-4,m.new_origins[0].x+m.target_length+5,m.rect.y1+4)
         text=result[m.page].get_text(clip=area, flags=fitz.TEXTFLAGS_TEXT | fitz.TEXT_INHIBIT_SPACES)
         if e.new not in text:
             raise PrecisionError(f'Validation failed: replacement "{e.new}" is not selectable on page {m.page+1}.')
@@ -432,6 +473,6 @@ def _edit_pdf(data: bytes, instructions: str, resources) -> dict:
     }
 
 
-def edit_pdf(data: bytes, instructions: str) -> dict:
+def edit_pdf(data: bytes, instructions: str, structured=None) -> dict:
     with ExitStack() as resources:
-        return _edit_pdf(data, instructions, resources)
+        return _edit_pdf(data, instructions, resources, structured)

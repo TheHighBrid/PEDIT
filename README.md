@@ -17,7 +17,7 @@ Open http://127.0.0.1:8000. On macOS, `start_mac.command` also installs dependen
 
 ## Editing
 
-Upload an unsigned PDF and enter one instruction per line:
+Upload an unsigned PDF. Add structured replacement rows to choose a page, a match occurrence, and left, right or automatic alignment. Leave a row's replacement blank to remove the selected text. You can also enter one quoted instruction per line:
 
 ```text
 Replace "2025" with "2026"
@@ -25,7 +25,7 @@ On page 2, replace "Draft" with "Final"
 Replace all "CONFIDENTIAL" with "PUBLIC"
 ```
 
-Matches must be contiguous within one text span. Repeated matches require a page that uniquely identifies one occurrence, or `Replace all`. The original upload is never overwritten. Review each modified page using the page selector and before/after slider. Download the PDF and its JSON verification report only after validation succeeds.
+Matches must be contiguous within one text span. The match number is one-based across the chosen page, or across the document if no page is specified. Repeated matches require a page that uniquely identifies one occurrence, or `Replace all`. The original upload is never overwritten. Review each modified page using the page selector and before/after slider. Download the PDF and its JSON verification report only after validation succeeds.
 
 ## Precision checks
 

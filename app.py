@@ -26,13 +26,19 @@ def index():
     return (ROOT/'src'/'static'/'index.html').read_text(encoding='utf8')
 
 @app.post('/api/edit')
-async def edit(file: UploadFile=File(...), instructions: str=Form(...)):
+async def edit(file: UploadFile=File(...), instructions: str=Form(''), edits_json: str=Form('[]')):
     # Per-request size limit, including a check after reading.
     data=await file.read(25*1024*1024+1)
     if not file.filename or not file.filename.lower().endswith('.pdf'):
         raise HTTPException(422,detail='Upload a .pdf document.')
     try:
-        result=await run_pdf_job(app,edit_pdf,data,instructions)
+        try:
+            structured=json.loads(edits_json)
+            if not isinstance(structured,list) or any(not isinstance(item,dict) for item in structured):
+                raise ValueError('Expected a list of edit objects.')
+        except (ValueError,TypeError) as exc:
+            raise PrecisionError(f'Invalid structured edits: {exc}') from exc
+        result=await run_pdf_job(app,edit_pdf,data,instructions,structured)
     except PrecisionError as e:
         raise HTTPException(422,detail=str(e))
     except WorkerUnavailable as e:
