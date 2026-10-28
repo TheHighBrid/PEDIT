@@ -9,10 +9,12 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from pdf_worker import lifespan, run_pdf_job, WorkerUnavailable
+
 from .editor import Edit, EditError, MAX_PDF_BYTES, edit_pdf, parse_instructions
 
 ROOT = Path(__file__).resolve().parent
-app = FastAPI(title='Pedit', description='Layout-preserving PDF replacement engine', version='0.1.0')
+app = FastAPI(title='Pedit', description='Layout-preserving PDF replacement engine', version='0.1.0', lifespan=lifespan)
 app.mount('/static', StaticFiles(directory=ROOT / 'static'), name='static')
 
 
@@ -41,9 +43,11 @@ async def edit(file: UploadFile = File(...), instructions: str = Form(''), edits
             edits.extend(Edit(**item) for item in structured)
         except (ValueError, TypeError) as exc:
             raise EditError(f'Invalid structured edits: {exc}') from exc
-        pdf, report = edit_pdf(data, edits)
+        pdf, report = await run_pdf_job(app, edit_pdf, data, edits)
         return {'pdf_base64': base64.b64encode(pdf).decode('ascii'), 'report': report}
     except EditError as exc:
         raise HTTPException(422, str(exc)) from exc
+    except WorkerUnavailable as exc:
+        raise HTTPException(503, str(exc)) from exc
     finally:
         await file.close()

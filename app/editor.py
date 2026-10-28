@@ -12,11 +12,14 @@ import re
 from typing import Any, Literal
 
 import fitz
-from PIL import Image, ImageChops
+from PIL import Image, ImageChops, ImageDraw
 
 MAX_PDF_BYTES = 12 * 1024 * 1024
 MAX_PAGES = 40
 MAX_EDITS = 30
+MAX_PAGE_AREA_PT2 = 10_000_000
+MAX_RENDER_PIXELS = 20_000_000
+MAX_RENDER_SIDE = 16_384
 
 
 class EditError(ValueError):
@@ -30,6 +33,16 @@ class Edit:
     page: int | None = None  # 1-based
     occurrence: int | None = None  # 1-based; explicit when target repeats
     align: Literal["auto", "left", "right"] = "auto"
+
+    def __post_init__(self):
+        if not isinstance(self.old, str) or not isinstance(self.new, str):
+            raise EditError('Edit fields old and new must be strings.')
+        for name in ('page', 'occurrence'):
+            value = getattr(self, name)
+            if value is not None and (isinstance(value, bool) or not isinstance(value, int) or value < 1):
+                raise EditError(f'Edit field {name} must be a positive integer or null.')
+        if not isinstance(self.align, str) or self.align not in ('auto', 'left', 'right'):
+            raise EditError('Edit alignment must be auto, left, or right.')
 
 
 @dataclasses.dataclass
@@ -105,6 +118,12 @@ def _document(data: bytes) -> fitz.Document:
     if not 1 <= len(doc) <= MAX_PAGES:
         doc.close()
         raise EditError('PDF must have between 1 and 40 pages.')
+    try:
+        for page in doc:
+            _check_page_size(page)
+    except EditError:
+        doc.close()
+        raise
     return doc
 
 
@@ -136,12 +155,25 @@ def _span_matches(doc: fitz.Document, edit: Edit) -> list[Match]:
 
 
 def _get_font(doc: fitz.Document, page: fitz.Page, span_font: str):
-    # Lookup the *actual* PDF font resource instead of approximating by its name.
-    for xref, ext, _ftype, basefont, resource, *_ in page.get_fonts(full=True):
-        normalized = basefont.split('+')[-1].replace(' ', '').replace('-', '').lower()
-        target = span_font.split('+')[-1].replace(' ', '').replace('-', '').lower()
-        if normalized != target and not (normalized.startswith(target) or target.startswith(normalized)):
-            continue
+    # Exact resource identity takes precedence over any family-name similarity.
+    # Family prefixes are unsafe: Helvetica and Helvetica-Bold are different fonts.
+    def norm(name):
+        return re.sub(r'[^a-z0-9]', '', re.sub(r'^[A-Z]{6}\+', '', name).lower())
+    target = norm(span_font)
+    fonts = page.get_fonts(full=True)
+    candidates = [record for record in fonts if target and norm(record[3]) == target]
+    if not candidates and target:
+        # Some producers expose a Book/Regular suffix only on the font resource.
+        # Normalize those style-neutral suffixes, never family/weight prefixes.
+        regular = lambda name: re.sub(r'(book|regular)$', '', norm(name))
+        candidates = [record for record in fonts
+                      if regular(record[3]) and regular(record[3]) == regular(span_font)]
+    # Repeated references to the very same font xref do not create ambiguity.
+    candidates = list({record[0]: record for record in candidates}.values())
+    if len(candidates) > 1:
+        raise EditError(f'Original font "{span_font}" matches several resources. No substitution was made.')
+    for xref, ext, _ftype, basefont, resource, *_ in candidates:
+        normalized = norm(basefont)
         if ext != 'n/a':
             _, extension, _, data = doc.extract_font(xref)
             if not data:
@@ -231,7 +263,10 @@ def _prepare(doc: fitz.Document, edits: list[Edit]) -> list[Match]:
 
     for i, a in enumerate(selected):
         for b in selected[i + 1:]:
-            if a.page_index == b.page_index and a.rect.intersects(b.rect):
+            if a.page_index == b.page_index and (
+                a.rect.intersects(b.rect) or
+                (not a.new_rect.is_empty and not b.new_rect.is_empty and
+                 a.new_rect.intersects(b.new_rect))):
                 raise EditError('Two edits overlap. Combine them into one replacement.')
 
     # A text-only redaction can erase any glyph whose box intersects it. Check
@@ -286,9 +321,35 @@ def _rgb(color: int) -> tuple[float, float, float]:
     return ((color >> 16 & 255) / 255., (color >> 8 & 255) / 255., (color & 255) / 255.)
 
 
+def _check_page_size(page, scale=1.35):
+    width, height = page.rect.width, page.rect.height
+    if (not math.isfinite(width) or not math.isfinite(height) or width <= 0 or height <= 0
+            or width * height > MAX_PAGE_AREA_PT2):
+        raise EditError('A PDF page is too large to verify safely.')
+    pixels = (page.rect * fitz.Matrix(scale, scale)).irect
+    if (pixels.width > MAX_RENDER_SIDE or pixels.height > MAX_RENDER_SIDE
+            or pixels.width * pixels.height > MAX_RENDER_PIXELS):
+        raise EditError('A PDF page is too large to verify safely.')
+
+
 def _render(page: fitz.Page, scale: float = 1.35) -> Image.Image:
+    _check_page_size(page, scale)
     p = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False, colorspace=fitz.csRGB)
     return Image.frombytes('RGB', (p.width, p.height), p.samples)
+
+
+def _difference_counts(before, after, masks):
+    difference = ImageChops.difference(before, after).convert('L')
+    allowed = Image.new('L', before.size, 0)
+    draw = ImageDraw.Draw(allowed)
+    for x0, y0, x1, y1 in masks:
+        if x1 > x0 and y1 > y0:
+            draw.rectangle((x0, y0, x1 - 1, y1 - 1), fill=255)
+    changed = difference.point(lambda value: 255 if value > 16 else 0)
+    inside_changed = ImageChops.multiply(changed, allowed).histogram()[255]
+    outside_changed = changed.histogram()[255] - inside_changed
+    outside_total = before.width * before.height - allowed.histogram()[255]
+    return outside_total, outside_changed, inside_changed
 
 
 def _png_data_uri(im: Image.Image) -> str:
@@ -362,8 +423,6 @@ def edit_pdf(data: bytes, edits: list[Edit]) -> tuple[bytes, dict]:
                     a = _render(verified[pi])
                     if a.size != b.size:
                         raise EditError('Page dimensions changed during editing.')
-                    d = ImageChops.difference(b, a).convert('L')
-                    pix = d.load()
                     scale_x = b.width / original[pi].rect.width
                     scale_y = b.height / original[pi].rect.height
                     masks = []
@@ -375,17 +434,7 @@ def edit_pdf(data: bytes, edits: list[Edit]) -> tuple[bytes, dict]:
                                       max(0, int(union.y0 * scale_y) - 3),
                                       min(b.width, math.ceil(union.x1 * scale_x) + 3),
                                       min(b.height, math.ceil(union.y1 * scale_y) + 3)))
-                    outside_total = outside_changed = inside_changed = 0
-                    for y in range(b.height):
-                        for x in range(b.width):
-                            inside = any(x0 <= x < x1 and y0 <= y < y1 for x0, y0, x1, y1 in masks)
-                            if not inside:
-                                outside_total += 1
-                            if pix[x, y] > 16:
-                                if inside:
-                                    inside_changed += 1
-                                else:
-                                    outside_changed += 1
+                    outside_total, outside_changed, inside_changed = _difference_counts(b, a, masks)
                     ratio = (outside_changed / outside_total) if outside_total else 0
                     # Reject substantial differences outside the intended regions.
                     if ratio > 0.0001:

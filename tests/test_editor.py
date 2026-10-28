@@ -105,16 +105,16 @@ def test_multi_edits_and_pdf_pages_unchanged():
 
 
 def test_api_serves_ui_and_returns_binary_result():
-    client = TestClient(app)
-    assert client.get('/').status_code == 200
-    assert client.get('/api/health').json()['status'] == 'ok'
-    response = client.post('/api/edit', data={'instructions': 'replace "Mar 2024" with "Mar 2025"'},
-                           files={'file': ('test.pdf', make_pdf(), 'application/pdf')})
-    assert response.status_code == 200, response.text
-    assert response.json()['report']['status'] == 'passed'
-    response = client.post('/api/edit', data={'instructions': 'change date please'},
-                           files={'file': ('test.pdf', make_pdf(), 'application/pdf')})
-    assert response.status_code == 422
+    with TestClient(app) as client:
+        assert client.get('/').status_code == 200
+        assert client.get('/api/health').json()['status'] == 'ok'
+        response = client.post('/api/edit', data={'instructions': 'replace "Mar 2024" with "Mar 2025"'},
+                               files={'file': ('test.pdf', make_pdf(), 'application/pdf')})
+        assert response.status_code == 200, response.text
+        assert response.json()['report']['status'] == 'passed'
+        response = client.post('/api/edit', data={'instructions': 'change date please'},
+                               files={'file': ('test.pdf', make_pdf(), 'application/pdf')})
+        assert response.status_code == 422
 
 
 def test_reject_non_pdf():
