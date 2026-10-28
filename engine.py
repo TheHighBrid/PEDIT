@@ -6,6 +6,7 @@ validated, fail closed instead of silently changing formatting or surrounding co
 from __future__ import annotations
 import io
 import re
+import math
 from contextlib import ExitStack
 from collections import Counter
 from dataclasses import field
@@ -106,8 +107,12 @@ def validate_pdf(data: bytes) -> fitz.Document:
         if not 1 <= len(doc) <= MAX_PAGES:
             doc.close()
             raise PrecisionError(f'PDF must contain 1 to {MAX_PAGES} pages.')
+        for page in doc:
+            _check_render_size(page)
         return doc
     except PrecisionError:
+        if 'doc' in locals() and not doc.is_closed:
+            doc.close()
         raise
     except Exception as e:
         raise PrecisionError(f'PDF could not be opened: {str(e)[:100]}') from e
@@ -155,12 +160,16 @@ def _resolve_font(doc: fitz.Document, page_index: int, matched: Match):
         compact=re.sub(r'[^a-z0-9]','',re.sub(r'^[A-Z]{6}\+','',name).lower())
         return re.sub(r'(book|regular)$','',compact)
     fonts=doc[page_index].get_fonts(full=True)
-    plausible=[]
+    exact=[]
+    aliases=[]
     for record in fonts:
         xref,ext,ftype,base,resource,encoding=record[:6]
         b=re.sub(r'^[A-Z]{6}\+','',base)
-        if b==normalized or b.lower()==normalized.lower() or fingerprint(b)==fingerprint(normalized):
-            plausible.append(record)
+        if normalized and b.lower()==normalized.lower():
+            exact.append(record)
+        elif normalized and fingerprint(b)==fingerprint(normalized):
+            aliases.append(record)
+    plausible=list({record[0]:record for record in (exact or aliases)}.values())
     if len(plausible)>1:
         raise PrecisionError(f'Multiple embedded font resources match "{font_name}" on page {page_index+1}; exact replacement is ambiguous.')
     if plausible:
@@ -178,9 +187,17 @@ def _resolve_font(doc: fitz.Document, page_index: int, matched: Match):
 
 VERIFY_SCALE = 300 / 72
 
-def _render(page, scale=VERIFY_SCALE):
-    if page.rect.width * page.rect.height * scale * scale > 40_000_000:
+def _check_render_size(page, scale=VERIFY_SCALE):
+    width,height=page.rect.width,page.rect.height
+    if not math.isfinite(width) or not math.isfinite(height) or width<=0 or height<=0:
+        raise PrecisionError('Page has invalid dimensions.')
+    pixels=(page.rect * fitz.Matrix(scale,scale)).irect
+    if pixels.width>16_384 or pixels.height>16_384 or pixels.width*pixels.height>40_000_000:
         raise PrecisionError('Page exceeds the safe 300 DPI verification size limit.')
+
+
+def _render(page, scale=VERIFY_SCALE):
+    _check_render_size(page,scale)
     pix=page.get_pixmap(matrix=fitz.Matrix(scale,scale),alpha=False, colorspace=fitz.csRGB, annots=True)
     return Image.frombytes('RGB',(pix.width,pix.height),pix.samples)
 

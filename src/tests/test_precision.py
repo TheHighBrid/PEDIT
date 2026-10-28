@@ -281,3 +281,23 @@ def test_unsupported_qualified_xmp_revision_is_blocked(property_xml):
         source=doc.tobytes()
     with pytest.raises(PrecisionError,match='Unsupported XMP revision property'):
         edit_pdf(source,'Replace "2025" with "2026"')
+
+
+@pytest.mark.parametrize('dimensions',[(14400,14400),(100000,5)])
+def test_oversized_or_extremely_narrow_pages_are_blocked_before_rendering(dimensions):
+    from engine import validate_pdf
+    with fitz.open() as doc:
+        doc.new_page(width=dimensions[0],height=dimensions[1])
+        source=doc.tobytes()
+    with pytest.raises(PrecisionError,match='size limit'):
+        validate_pdf(source)
+
+
+def test_font_lookup_prefers_exact_name_before_regular_alias():
+    from engine import _resolve_font
+    from types import SimpleNamespace
+    class Page:
+        def get_fonts(self,full):
+            return [(1,'n/a','Type1','Helvetica-Regular','F1',''),(2,'n/a','Type1','Helvetica','F2','')]
+    name,data,font=_resolve_font([Page()],0,SimpleNamespace(font='Helvetica'))
+    assert name=='helv'

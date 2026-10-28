@@ -56,12 +56,13 @@ This is **not a universal pixel-perfect PDF editor**. Changes necessarily alter 
 
 Runtime visual verification uses MuPDF at 300 DPI. The test suite also checks a fixture with Poppler, when installed; Poppler is not a second runtime export gate. Print separations, original color-space operators, tagged-PDF accessibility, PDF/A/PDF/X compliance, JavaScript/actions and all low-level document objects are not exhaustively certified. Conformance-sensitive documents require an appropriate independent validator and professional review. The source reconstruction gate is deliberately strict and can reject documents that a less conservative editor would accept.
 
-Limits: 25 MB input/output, 60 pages, 20 instructions, and 40 million rendered pixels per page at verification resolution. All modified-page previews are available at 144 DPI; validation runs at 300 DPI. Large files may take time to verify.
+Limits: 25 MB input/output, 60 pages, 20 instructions, 40 million rendered pixels per page at verification resolution, and 16,384 pixels per rendered side. Page sizes are checked before processing. PDF processing runs in one spawned worker process per server instance so health requests remain responsive and MuPDF is not shared across threads. All modified-page previews are available at 144 DPI; validation runs at 300 DPI. Large files may take time to verify.
 
 ## Tests
 
 ```bash
 python -m pytest -q
+node --test src/tests/ui.test.cjs
 ```
 
 The suite covers embedded fonts, tracking, glyph metrics, fine print, table rules, metadata/XMP, signature detection, graphics/images/interactions, source reconstruction, all-page checks, and the web upload/download/report workflow. Install Poppler (`pdftoppm`) to run the optional independent renderer test.

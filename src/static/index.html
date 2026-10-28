@@ -104,8 +104,8 @@ button.addEventListener('click',async()=>{
   const form=new FormData();form.append('file',file.files[0]);form.append('instructions',prompt.value);
   file.disabled=true;prompt.disabled=true;button.disabled=true;$('buttonText').textContent='Inspecting and validating…';$('state').textContent='PROCESSING';
   try{
-    const response=await fetch('/api/edit',{method:'POST',body:form});const data=await response.json();
-    if(!response.ok)throw Error(typeof data.detail==='string'?data.detail:'Unable to process PDF.');
+    const response=await fetch('/api/edit',{method:'POST',body:form});const data=await response.json().catch(()=>null);
+    if(!response.ok || !data)throw Error(data && typeof data.detail==='string'?data.detail:`Edit failed (HTTP ${response.status}).`);
     previews=data.previews;
     $('previewPage').replaceChildren(...previews.map((p,i)=>{const o=document.createElement('option');o.value=i;o.textContent='Page '+p.page;return o}));
     $('previewPage').hidden=previews.length<2;showPage(0);

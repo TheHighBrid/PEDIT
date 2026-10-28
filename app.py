@@ -11,12 +11,14 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from pdf_worker import lifespan, run_pdf_job, WorkerUnavailable
+
 from engine import PrecisionError, edit_pdf
 
 ROOT=Path(__file__).resolve().parent
 STORE=Path(tempfile.mkdtemp(prefix='precisionpdf_'))
 TTL_SECONDS=60*60
-app=FastAPI(title='PrecisionPDF', docs_url=None, redoc_url=None)
+app=FastAPI(title='PrecisionPDF', docs_url=None, redoc_url=None, lifespan=lifespan)
 app.mount('/static',StaticFiles(directory=ROOT/'src'/'static'),name='static')
 
 @app.get('/', response_class=HTMLResponse)
@@ -30,9 +32,11 @@ async def edit(file: UploadFile=File(...), instructions: str=Form(...)):
     if not file.filename or not file.filename.lower().endswith('.pdf'):
         raise HTTPException(422,detail='Upload a .pdf document.')
     try:
-        result=edit_pdf(data,instructions)
+        result=await run_pdf_job(app,edit_pdf,data,instructions)
     except PrecisionError as e:
         raise HTTPException(422,detail=str(e))
+    except WorkerUnavailable as e:
+        raise HTTPException(503,detail=str(e))
     except Exception:
         raise HTTPException(500,detail='Unexpected PDF processing failure. No output was created.')
     token=secrets.token_urlsafe(24)
