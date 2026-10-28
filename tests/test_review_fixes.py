@@ -108,3 +108,27 @@ def test_both_asgi_entry_points_resolve_to_the_same_application():
     from uvicorn.importer import import_from_string
     assert import_from_string('app:app') is app
     assert import_from_string('app.main:app') is app
+
+
+@pytest.mark.parametrize('rotation',[90,180,270])
+def test_rotated_page_edit_masks_follow_rendered_coordinates(rotation):
+    with fitz.open() as doc:
+        page=doc.new_page(width=612,height=792)
+        page.insert_text((60,100),'2024',fontname='helv')
+        page.insert_text((470,300),'Mar 2024',fontname='helv')
+        page.set_rotation(rotation)
+        source=doc.tobytes()
+    output,report=edit_pdf(source,[Edit('2024','2025',occurrence=1),Edit('Mar 2024','Mar 2025')])
+    with fitz.open(stream=output,filetype='pdf') as final:
+        assert final[0].rotation==rotation
+        assert final[0].get_text().count('2025')==2
+    assert report['visual_regression'][0]['outside_changed_pixels']==0
+
+
+@pytest.mark.parametrize('render_mode',[1,2,3])
+def test_nondefault_text_paint_is_refused(render_mode):
+    with fitz.open() as doc:
+        page=doc.new_page();page.insert_text((60,100),'2024',render_mode=render_mode)
+        source=doc.tobytes()
+    with pytest.raises(EditError,match='rendering modes|transparency'):
+        edit_pdf(source,[Edit('2024','2025')])

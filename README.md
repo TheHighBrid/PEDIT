@@ -76,7 +76,7 @@ The Pedit application in this branch starts with `python -m uvicorn app.main:app
 
 PDF edits run in one spawned worker process per server instance, keeping ASGI health requests responsive and avoiding shared MuPDF threads. Large pages are refused before rendering: maximum 10 million square points, 20 million rendered pixels, and 16,384 pixels per side at the current verification scale.
 
-Structured edit fields validate strings, positive integer page/match values, and supported alignment. Font lookup prefers exact normalized resource names, permits only unambiguous Book/Regular aliases, and never matches font-family prefixes. Replacement rectangles are checked pairwise for collisions. Pillow masks and histograms replace Python pixel loops without changing the existing threshold of 16.
+Structured edit fields validate strings, positive integer page/match values, and supported alignment. Font lookup prefers exact normalized resource names, permits only unambiguous Book/Regular aliases, and never matches font-family prefixes. Replacement rectangles are checked pairwise for collisions. Verification masks are transformed into rendered coordinates on rotated pages, while edit bounds remain in unrotated text coordinates. Stroked, fill-and-stroke, hidden, layered or transparent source text is refused when its paint state cannot be preserved. Pillow masks and histograms replace Python pixel loops without changing the existing threshold of 16.
 
 Changing the PDF, instructions, or replacement rows clears previous results and invalidates pending responses. Downloads use the submitted file name. Non-JSON server responses show an HTTP status message.
 

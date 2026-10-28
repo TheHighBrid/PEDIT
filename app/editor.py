@@ -203,6 +203,19 @@ def _bbox_union(chars: list[dict]) -> fitz.Rect:
     return rect
 
 
+def _validate_text_paint(page, match):
+    first = match.selected[0]
+    origin = first['origin']
+    traces = [trace for trace in page.get_texttrace()
+              if any(chr(char[0]) == first['c'] and
+                     abs(char[2][0] - origin[0]) < .01 and
+                     abs(char[2][1] - origin[1]) < .01 for char in trace['chars'])]
+    # Fill-and-stroke is represented by two traces, so it is also rejected.
+    if (len(traces) != 1 or traces[0]['type'] != 0 or
+            traces[0]['opacity'] != 1 or traces[0].get('layer')):
+        raise EditError('Non-default text rendering modes, layered or transparent text cannot be preserved safely.')
+
+
 def _prepare(doc: fitz.Document, edits: list[Edit]) -> list[Match]:
     if not edits:
         raise EditError('Add at least one replacement or removal instruction.')
@@ -235,6 +248,8 @@ def _prepare(doc: fitz.Document, edits: list[Edit]) -> list[Match]:
         if chosen.span.get('alpha', 255) != 255:
             raise EditError(f'Edit {i}: text transparency cannot yet be preserved with certainty.')
         page = doc[chosen.page_index]
+        _validate_text_paint(page, chosen)
+        bounds = page.rect * page.derotation_matrix
         xref, font_name, font_data, font, _ = _get_font(doc, page, chosen.span['font'])
         for char in edit.new:
             if not font.has_glyph(ord(char), fallback=0):
@@ -252,12 +267,12 @@ def _prepare(doc: fitz.Document, edits: list[Edit]) -> list[Match]:
         chosen.baseline_y = float(chosen.selected[0]['origin'][1])
         chosen.width = font.text_length(edit.new, fontsize=chosen.span['size']) if edit.new else 0
         # For dates, titles, etc. on the far right, preserve the original right edge.
-        right_column = chosen.rect.x0 > page.rect.width * 0.58 and chosen.rect.x1 > page.rect.width * 0.80
+        right_column = chosen.rect.x0 > bounds.width * 0.58 and chosen.rect.x1 > bounds.width * 0.80
         chosen.anchor = edit.align if edit.align != 'auto' else ('right' if right_column else 'left')
         chosen.start_x = float(chosen.rect.x1 - chosen.width) if chosen.anchor == 'right' else float(chosen.selected[0]['origin'][0])
         chosen.new_rect = fitz.Rect(chosen.start_x, chosen.rect.y0,
                                     chosen.start_x + chosen.width, chosen.rect.y1)
-        if edit.new and (chosen.new_rect.x0 < page.rect.x0 + 2 or chosen.new_rect.x1 > page.rect.x1 - 2):
+        if edit.new and (chosen.new_rect.x0 < bounds.x0 + 2 or chosen.new_rect.x1 > bounds.x1 - 2):
             raise EditError(f'Edit {i}: new text would exceed the page boundary. Original font size is not changed.')
         selected.append(chosen)
 
@@ -429,7 +444,7 @@ def edit_pdf(data: bytes, edits: list[Edit]) -> tuple[bytes, dict]:
                     for m in matches:
                         if m.page_index != pi:
                             continue
-                        union = m.rect | m.new_rect
+                        union = (m.rect | m.new_rect) * original[pi].rotation_matrix
                         masks.append((max(0, int(union.x0 * scale_x) - 3),
                                       max(0, int(union.y0 * scale_y) - 3),
                                       min(b.width, math.ceil(union.x1 * scale_x) + 3),
