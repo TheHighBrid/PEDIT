@@ -7,6 +7,9 @@ let ruleCount = 0;
 let inputVersion = 0;
 let outputName = null;
 let previews = [];
+let sourceSpans = [];
+let sourcePage = 1;
+let sourceVersion = 0;
 function showPreview(i) { const p=previews[i]; $('beforeImg').src=p.before_image; $('afterImg').src=p.after_image; $('pageLabel').textContent='PAGE '+String(p.page).padStart(2,'0'); }
 $('previewPage').addEventListener('change', e=>showPreview(Number(e.target.value)));
 
@@ -18,16 +21,18 @@ function setMessage(message, type='error') {
   $('message').textContent = message;
 }
 function addRule(old = '', replacement = '') {
+  if (document.querySelectorAll('.rule-card').length >= 20) { setMessage('Maximum 20 replacement rows.'); return null; }
   ruleCount += 1;
   const row = document.createElement('div');
   row.className = 'rule-card';
   row.innerHTML = `
     <div class="rule-top"><span class="rule-label">REPLACEMENT ${String(ruleCount).padStart(2,'0')}</span><button class="remove-rule" type="button" title="Remove this edit" aria-label="Remove this edit">×</button></div>
     <div class="rule-fields"><input class="old-text" aria-label="Exact original text" placeholder="Text to find exactly" value="${escapeHtml(old)}" /><input class="new-text" aria-label="Replacement text" placeholder="Replace with (blank = remove)" value="${escapeHtml(replacement)}" /></div>
-    <div class="rule-options"><label>PAGE <input class="page-number" type="number" min="1" max="60" placeholder="Any" aria-label="Page, optional" /></label><label>ALIGN <select class="alignment" aria-label="Replacement alignment"><option value="auto">Auto</option><option value="left">Left</option><option value="right">Right</option></select></label><label>MATCH <input class="occurrence" type="number" min="1" placeholder="Any" aria-label="Match occurrence, optional" /></label></div>`;
+    <div class="rule-options"><label>PAGE <input class="page-number" type="number" min="1" max="60" placeholder="Any" aria-label="Page, optional" /></label><label>ALIGN <select class="alignment" aria-label="Replacement alignment"><option value="auto">Auto</option><option value="left">Left</option><option value="right">Right</option></select></label><label>MATCH <input class="occurrence" type="number" min="1" placeholder="Any" aria-label="Match occurrence, optional" /></label><label><input class="all-occurrences" type="checkbox" /> ALL MATCHES</label></div>`;
   row.querySelector('.remove-rule').addEventListener('click', () => { row.remove(); invalidateResults(); });
   $('rules').appendChild(row);
   invalidateResults();
+  return row;
 }
 addRule();
 $('addRule').addEventListener('click', () => addRule());
@@ -44,10 +49,20 @@ function invalidateResults() {
 $('rules').addEventListener('input', invalidateResults);
 $('rules').addEventListener('change', invalidateResults);
 $('instructions').addEventListener('input', invalidateResults);
+$('editMode').addEventListener('change', invalidateResults);
 function chooseFile(file) {
   if (!file) return;
   if (!file.name.toLowerCase().endsWith('.pdf')) { setMessage('Only original PDF files are supported. A screenshot has no reusable PDF font objects.'); return; }
   if (file.size > 25 * 1024 * 1024) { setMessage('PDF must be smaller than 25 MB.'); return; }
+  sourceVersion += 1;
+  sourceSpans = [];
+  $('sourceSpans').replaceChildren();
+  $('sourceImage').hidden = true;
+  $('sourceImage').removeAttribute('src');
+  $('sourceStatus').textContent = 'Inspect a page to select source text.';
+  $('sourcePage').value = '1';
+  $('sourcePage').max = '60';
+  for (const row of document.querySelectorAll('.rule-card')) row.sourceAnchor=null;
   selectedFile = file;
   invalidateResults();
   $('uploadTitle').textContent = file.name;
@@ -91,13 +106,18 @@ $('run').addEventListener('click', async () => {
     const replacement = row.querySelector('.new-text').value;
     const page = row.querySelector('.page-number').value;
     const occurrence = row.querySelector('.occurrence').value;
-    if (!old && !replacement && !page && !occurrence) continue;
+    const allOccurrences = !!row.querySelector('.all-occurrences').checked;
+    if (!old && !replacement && !page && !occurrence && !allOccurrences) continue;
+    if (allOccurrences && occurrence) { setMessage('Choose a match number or all matches, not both.'); return; }
     if (!old) { setMessage('Every filled replacement row needs the exact original text.'); return; }
     if (![row.querySelector('.page-number'), row.querySelector('.occurrence')].every(input => input.checkValidity())) {
       setMessage('Page and match must be positive whole numbers within the allowed range.'); return;
     }
+    const anchor=row.sourceAnchor;
+    const anchored=anchor && old===anchor.text && page===String(anchor.page) && occurrence===String(anchor.occurrence) && !allOccurrences;
     edits.push({old, new: replacement, page: page ? Number(page) : null,
-      occurrence: occurrence ? Number(occurrence) : null, align:row.querySelector('.alignment').value});
+      origin: anchored ? anchor.origin : null,
+      occurrence: anchored ? null : occurrence ? Number(occurrence) : null, all_occurrences: allOccurrences, align:row.querySelector('.alignment').value});
   }
   if (edits.length === 0 && !$('instructions').value.trim()) { setMessage('Add at least one edit or text instruction.'); return; }
   invalidateResults();
@@ -110,6 +130,7 @@ $('run').addEventListener('click', async () => {
   form.append('file', submittedFile);
   form.append('instructions', $('instructions').value.trim());
   form.append('edits_json', JSON.stringify(edits));
+  form.append('mode', $('editMode').value || 'precision');
   try {
     const response = await fetch('/api/edit', {method:'POST', body:form});
     const data = await response.json().catch(() => null);
@@ -132,7 +153,7 @@ $('run').addEventListener('click', async () => {
     $('previewState').classList.add('passed');
     $('previewState').textContent = 'VALIDATION PASSED';
     $('pageLabel').textContent = 'PAGE ' + String(report.preview_page).padStart(2,'0');
-    $('changeCount').textContent = String(report.edits.length).padStart(2,'0');
+    $('changeCount').textContent = String(report.replacement_count ?? report.edits.length).padStart(2,'0');
     const pixels = 0;
     $('pixelCount').textContent = pixels.toLocaleString() + ' px';
     $('changeList').innerHTML = report.edits.map((ch,i) => `<div class="change-item"><span class="old">${escapeHtml(ch.old)}</span> → <span class="new">${escapeHtml(ch.new || '[REMOVED]')}</span><small>PAGE ${ch.page} / ${escapeHtml(ch.font)} / ${ch.font_size} PT / ${escapeHtml(ch.spacing_mode)}</small></div>`).join('');
@@ -148,4 +169,72 @@ $('download').addEventListener('click', () => {
   a.href = outputUrl;
   a.download = outputName;
   document.body.appendChild(a); a.click(); a.remove();
+});
+
+function selectSourceSpan(index) {
+  const candidate=sourceSpans[index];
+  if (!candidate) return;
+  let row=Array.from(document.querySelectorAll('.rule-card')).find(r =>
+    !r.querySelector('.old-text').value && !r.querySelector('.new-text').value &&
+    !r.querySelector('.page-number').value && !r.querySelector('.occurrence').value &&
+    !r.querySelector('.all-occurrences').checked);
+  if (!row) row=addRule();
+  if (!row) return;
+  // Occurrences use the engine's non-overlapping substring order, scoped to page.
+  let occurrence=1;
+  for (const prior of sourceSpans.slice(0,index)) occurrence+=prior.text.split(candidate.text).length-1;
+  row.querySelector('.old-text').value=candidate.text;
+  row.querySelector('.page-number').value=String(sourcePage);
+  row.querySelector('.occurrence').value=String(occurrence);
+  row.sourceAnchor=Array.isArray(candidate.origin) ? {origin:candidate.origin,text:candidate.text,page:sourcePage,occurrence} : null;
+  invalidateResults();
+  row.querySelector('.new-text').focus();
+  setMessage('Source text selected. Enter replacement text, or leave it blank to remove.', 'success');
+}
+function renderSourceSpans() {
+  const query=$('sourceFilter').value.toLocaleLowerCase();
+  const buttons=[];
+  sourceSpans.forEach((span,index) => {
+    if (!span.text.toLocaleLowerCase().includes(query)) return;
+    const button=document.createElement('button');
+    button.type='button';
+    button.className='source-span';
+    button.textContent=span.text+' · '+span.font+' / '+span.size+' pt / '+span.color;
+    button.addEventListener('click',()=>selectSourceSpan(index));
+    buttons.push(button);
+  });
+  $('sourceSpans').replaceChildren(...buttons);
+}
+$('sourceFilter').addEventListener('input',renderSourceSpans);
+$('sourcePage').addEventListener('input',()=>{
+  sourceVersion+=1;
+  sourceSpans=[];
+  $('sourceSpans').replaceChildren();
+  $('sourceImage').hidden=true;
+  $('sourceStatus').textContent='Inspect this page to load its source text.';
+});
+$('inspectSource').addEventListener('click', async()=>{
+  if (!selectedFile) { setMessage('Choose an original PDF first.'); return; }
+  if (!$('sourcePage').checkValidity()) { setMessage('Choose a valid whole page number.'); return; }
+  const page=Number($('sourcePage').value);
+  if (!Number.isInteger(page) || page<1) { setMessage('Choose a valid whole page number.'); return; }
+  const version=++sourceVersion;
+  const file=selectedFile;
+  const form=new FormData();form.append('file',file);form.append('page',String(page));
+  sourceSpans=[];$('sourceSpans').replaceChildren();$('sourceImage').hidden=true;
+  $('sourceStatus').textContent='Inspecting source page…';
+  try {
+    const response=await fetch('/api/inspect',{method:'POST',body:form});
+    const data=await response.json().catch(()=>null);
+    if (version!==sourceVersion || file!==selectedFile) return;
+    if (!response.ok || !data) throw new Error(data && typeof data.detail==='string' ? data.detail : `Inspection failed (HTTP ${response.status}).`);
+    sourceSpans=data.spans;sourcePage=data.page;
+    $('sourcePage').max=String(data.pages);
+    $('sourceImage').src=data.image;$('sourceImage').hidden=false;
+    $('sourceStatus').textContent=data.signature_present ? 'Signature indicators detected. Editing is blocked; obtain an unsigned source.' :
+      sourceSpans.length ? `Page ${data.page} of ${data.pages}. Select source text below.` : 'No selectable text on this page. Scanned or outlined text needs a different workflow.';
+    renderSourceSpans();
+  } catch(error) {
+    if (version===sourceVersion && file===selectedFile) $('sourceStatus').textContent=error.message;
+  }
 });

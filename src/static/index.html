@@ -26,6 +26,15 @@
           <div class="upload-symbol">↥</div><strong id="uploadTitle">Drop your PDF here</strong>
           <span id="uploadSubtitle">or click to browse · PDF only · max 25 MB</span>
         </div>
+        <details class="source-browser">
+          <summary>Browse source text and typography</summary>
+          <p>Inspect a page, then select its text to fill an exact replacement row. Candidates still require full verification.</p>
+          <div class="source-actions"><label for="sourcePage">PAGE</label><input id="sourcePage" type="number" min="1" max="60" value="1" /><button id="inspectSource" type="button">Inspect page</button></div>
+          <p id="sourceStatus" role="status" aria-live="polite">Choose a PDF first.</p>
+          <img id="sourceImage" alt="Source PDF page for text inspection" hidden />
+          <label for="sourceFilter">FILTER SOURCE TEXT</label><input id="sourceFilter" type="search" placeholder="Find text on this page" />
+          <div id="sourceSpans" class="source-spans" aria-label="Source text candidates"></div>
+        </details>
         <div class="step second-step"><span class="step-index">02</span><h2>Instructions</h2><span class="step-side">SURGICAL REPLACEMENTS</span></div>
         <p class="field-intro">Add exact text replacements below. Quoted instructions are optional for additional changes.</p>
         <div id="rules" class="rules"></div>
@@ -33,6 +42,9 @@
         <label class="field-label" for="instructions">OR WRITE INSTRUCTIONS <span>ONE PER LINE</span></label>
         <textarea id="instructions" rows="3" spellcheck="false" placeholder='replace "Mar 2024 - Dec 2024" with "Mar 2024 - Dec 2025"'></textarea>
         <div class="syntax-note">Exact source text is required. Use <code>on page 2 replace "old" with "new"</code> to target a page.</div>
+        <label class="field-label" for="editMode">EDITING METHOD</label>
+        <select id="editMode" aria-describedby="editModeHelp"><option value="precision">Reconstruct and verify typography</option><option value="stream">Preserve original text operators</option></select>
+        <p id="editModeHelp" class="syntax-note">Original operators can retain mixed fonts and irregular kerning for equal-length ASCII text with matching glyph widths in supported PDF standard fonts. Unsupported edits are refused.</p>
         <button type="button" id="run" class="run-btn"><span>Generate precision edit</span><span id="runArrow">↗</span></button>
         <div id="message" class="message" role="status" aria-live="polite"></div>
         <div class="privacy-note"><span>◈</span> No AI keys or external API requests. PDF processing runs on this server. Downloads expire after one hour.</div>
