@@ -20,7 +20,7 @@ function harness(){
   const get=id=>{if(!elements.has(id))elements.set(id,new Element());return elements.get(id);};
   const context={document:{getElementById:get,createElement:()=>new Element(),querySelectorAll:()=>rows,body:{appendChild(){}}},
     URL:{createObjectURL(){created.push('blob:output');return 'blob:output';},revokeObjectURL(){}},
-    FormData:class{append(){}},Blob,Uint8Array,atob,console,fetch:async()=>{throw Error('Unexpected fetch');}};
+    FormData:class{constructor(){this.values={};}append(key,value){this.values[key]=value;}},Blob,Uint8Array,atob,console,fetch:async()=>{throw Error('Unexpected fetch');}};
   vm.createContext(context);
   vm.runInContext(fs.readFileSync(path.join(__dirname,'../static/app.js'),'utf8'),context);
   get('comparison').value='50';
@@ -103,4 +103,26 @@ test('failed inspection shows an actionable status without source candidates',as
   await h.get('inspectSource').listeners.click[0]();
   assert.equal(h.get('sourceStatus').textContent,'Inspection failed (HTTP 413).');
   assert.equal(h.get('sourceSpans').options.length,0);
+});
+
+test('source selection keeps its position anchor when switching editing modes',async()=>{
+  const h=harness();h.rows[0].querySelector('.old-text').value='';h.rows[0].querySelector('.new-text').value='';
+  h.get('sourcePage').value='1';let form;
+  h.context.fetch=async(url,options)=>{
+    if(url==='/api/inspect')return inspection([{...candidates[0],origin:[70,100]}]);
+    form=options.body.values;return success();
+  };
+  await h.get('inspectSource').listeners.click[0]();h.context.selectSourceSpan(0);
+  h.rows[0].querySelector('.new-text').value='Year 2026';
+  h.get('editMode').value='stream';h.get('editMode').listeners.change[0]();
+  await h.run();
+  assert.equal(form.mode,'stream');const edit=JSON.parse(form.edits_json)[0];
+  assert.deepEqual(edit.origin,[70,100]);assert.equal(edit.occurrence,null);
+  h.context.chooseFile({name:'B.pdf',size:3});
+  assert.equal(h.rows[0].sourceAnchor,null);
+});
+test('changing editing mode discards an in-flight edit',async()=>{
+  const h=harness();let resolve;h.context.fetch=()=>new Promise(r=>resolve=r);
+  const pending=h.run();h.get('editMode').listeners.change[0]();resolve(success());await pending;
+  assert.equal(h.get('results').hidden,true);
 });

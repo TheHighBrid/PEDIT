@@ -49,6 +49,7 @@ function invalidateResults() {
 $('rules').addEventListener('input', invalidateResults);
 $('rules').addEventListener('change', invalidateResults);
 $('instructions').addEventListener('input', invalidateResults);
+$('editMode').addEventListener('change', invalidateResults);
 function chooseFile(file) {
   if (!file) return;
   if (!file.name.toLowerCase().endsWith('.pdf')) { setMessage('Only original PDF files are supported. A screenshot has no reusable PDF font objects.'); return; }
@@ -61,6 +62,7 @@ function chooseFile(file) {
   $('sourceStatus').textContent = 'Inspect a page to select source text.';
   $('sourcePage').value = '1';
   $('sourcePage').max = '60';
+  for (const row of document.querySelectorAll('.rule-card')) row.sourceAnchor=null;
   selectedFile = file;
   invalidateResults();
   $('uploadTitle').textContent = file.name;
@@ -111,8 +113,11 @@ $('run').addEventListener('click', async () => {
     if (![row.querySelector('.page-number'), row.querySelector('.occurrence')].every(input => input.checkValidity())) {
       setMessage('Page and match must be positive whole numbers within the allowed range.'); return;
     }
+    const anchor=row.sourceAnchor;
+    const anchored=anchor && old===anchor.text && page===String(anchor.page) && occurrence===String(anchor.occurrence) && !allOccurrences;
     edits.push({old, new: replacement, page: page ? Number(page) : null,
-      occurrence: occurrence ? Number(occurrence) : null, all_occurrences: allOccurrences, align:row.querySelector('.alignment').value});
+      origin: anchored ? anchor.origin : null,
+      occurrence: anchored ? null : occurrence ? Number(occurrence) : null, all_occurrences: allOccurrences, align:row.querySelector('.alignment').value});
   }
   if (edits.length === 0 && !$('instructions').value.trim()) { setMessage('Add at least one edit or text instruction.'); return; }
   invalidateResults();
@@ -125,6 +130,7 @@ $('run').addEventListener('click', async () => {
   form.append('file', submittedFile);
   form.append('instructions', $('instructions').value.trim());
   form.append('edits_json', JSON.stringify(edits));
+  form.append('mode', $('editMode').value || 'precision');
   try {
     const response = await fetch('/api/edit', {method:'POST', body:form});
     const data = await response.json().catch(() => null);
@@ -147,7 +153,7 @@ $('run').addEventListener('click', async () => {
     $('previewState').classList.add('passed');
     $('previewState').textContent = 'VALIDATION PASSED';
     $('pageLabel').textContent = 'PAGE ' + String(report.preview_page).padStart(2,'0');
-    $('changeCount').textContent = String(report.edits.length).padStart(2,'0');
+    $('changeCount').textContent = String(report.replacement_count ?? report.edits.length).padStart(2,'0');
     const pixels = 0;
     $('pixelCount').textContent = pixels.toLocaleString() + ' px';
     $('changeList').innerHTML = report.edits.map((ch,i) => `<div class="change-item"><span class="old">${escapeHtml(ch.old)}</span> → <span class="new">${escapeHtml(ch.new || '[REMOVED]')}</span><small>PAGE ${ch.page} / ${escapeHtml(ch.font)} / ${ch.font_size} PT / ${escapeHtml(ch.spacing_mode)}</small></div>`).join('');
@@ -180,6 +186,7 @@ function selectSourceSpan(index) {
   row.querySelector('.old-text').value=candidate.text;
   row.querySelector('.page-number').value=String(sourcePage);
   row.querySelector('.occurrence').value=String(occurrence);
+  row.sourceAnchor=Array.isArray(candidate.origin) ? {origin:candidate.origin,text:candidate.text,page:sourcePage,occurrence} : null;
   invalidateResults();
   row.querySelector('.new-text').focus();
   setMessage('Source text selected. Enter replacement text, or leave it blank to remove.', 'success');

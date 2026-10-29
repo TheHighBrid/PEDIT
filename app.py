@@ -42,7 +42,7 @@ async def inspect(file: UploadFile=File(...), page: int=Form(1)):
     return result
 
 @app.post('/api/edit')
-async def edit(file: UploadFile=File(...), instructions: str=Form(''), edits_json: str=Form('[]')):
+async def edit(file: UploadFile=File(...), instructions: str=Form(''), edits_json: str=Form('[]'), mode: str=Form('precision')):
     # Per-request size limit, including a check after reading.
     data=await file.read(25*1024*1024+1)
     if not file.filename or not file.filename.lower().endswith('.pdf'):
@@ -54,7 +54,7 @@ async def edit(file: UploadFile=File(...), instructions: str=Form(''), edits_jso
                 raise ValueError('Expected a list of edit objects.')
         except (ValueError,TypeError) as exc:
             raise PrecisionError(f'Invalid structured edits: {exc}') from exc
-        result=await run_pdf_job(app,edit_pdf,data,instructions,structured)
+        result=await run_pdf_job(app,edit_pdf,data,instructions,structured,mode)
     except PrecisionError as e:
         raise HTTPException(422,detail=str(e))
     except WorkerUnavailable as e:
@@ -63,7 +63,7 @@ async def edit(file: UploadFile=File(...), instructions: str=Form(''), edits_jso
         raise HTTPException(500,detail='Unexpected PDF processing failure. No output was created.')
     token=secrets.token_urlsafe(24)
     (STORE/f'{token}.pdf').write_bytes(result.pop('pdf'))
-    report={'integrity':result['integrity'],'edits':result['edits'],'validation':result['validation'],'limitations':result['limitation']}
+    report={'editing_mode':result['editing_mode'],'replacement_count':result['replacement_count'],'integrity':result['integrity'],'edits':result['edits'],'validation':result['validation'],'limitations':result['limitation']}
     (STORE/f'{token}.json').write_text(json.dumps(report,indent=2),encoding='utf8')
     for preview in result['previews']:
         preview['before_image']='data:image/png;base64,'+base64.b64encode(preview.pop('before_png')).decode()

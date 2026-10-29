@@ -42,6 +42,9 @@
         <label class="field-label" for="instructions">OR WRITE INSTRUCTIONS <span>ONE PER LINE</span></label>
         <textarea id="instructions" rows="3" spellcheck="false" placeholder='replace "Mar 2024 - Dec 2024" with "Mar 2024 - Dec 2025"'></textarea>
         <div class="syntax-note">Exact source text is required. Use <code>on page 2 replace "old" with "new"</code> to target a page.</div>
+        <label class="field-label" for="editMode">EDITING METHOD</label>
+        <select id="editMode" aria-describedby="editModeHelp"><option value="precision">Reconstruct and verify typography</option><option value="stream">Preserve original text operators</option></select>
+        <p id="editModeHelp" class="syntax-note">Original operators can retain mixed fonts and irregular kerning for equal-length ASCII text with matching glyph widths in supported PDF standard fonts. Unsupported edits are refused.</p>
         <button type="button" id="run" class="run-btn"><span>Generate precision edit</span><span id="runArrow">↗</span></button>
         <div id="message" class="message" role="status" aria-live="polite"></div>
         <div class="privacy-note"><span>◈</span> No AI keys or external API requests. PDF processing runs on this server. Downloads expire after one hour.</div>

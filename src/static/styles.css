@@ -15,3 +15,5 @@
 
 .rule-options { flex-wrap: wrap; }
 .rule-options input[type="checkbox"] { width: auto; accent-color: #6f8550; }
+
+#editMode { width: 100%; padding: 12px; background: #fff; color: #222; border: 1px solid #dfe3db; }
