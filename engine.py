@@ -34,7 +34,7 @@ class Edit:
     align: str = 'auto'
 
     def __post_init__(self):
-        if not isinstance(self.old,str) or not isinstance(self.new,str) or not self.old or '\n' in self.old or '\n' in self.new:
+        if not isinstance(self.old,str) or not isinstance(self.new,str) or not self.old or any(ord(c)<32 for c in self.old+self.new):
             raise PrecisionError('Edit text must be single-line strings with a nonempty original.')
         for name in ('page','occurrence'):
             value=getattr(self,name)
@@ -68,6 +68,7 @@ class Match:
     target_length: float = 0
     font_name: str = ''
     font_bytes: bytes = b''
+    context_origins: list = field(default_factory=list)
     origins: list = field(default_factory=list)
     new_origins: list = field(default_factory=list)
     paint_color: tuple = ()
@@ -134,20 +135,25 @@ def validate_pdf(data: bytes) -> fitz.Document:
         raise PrecisionError(f'PDF could not be opened: {str(e)[:100]}') from e
 
 def _all_spans(page: fitz.Page):
-    d = page.get_text('rawdict', flags=fitz.TEXTFLAGS_RAWDICT | fitz.TEXT_INHIBIT_SPACES)
+    # Text planning never needs decoded image payloads.
+    flags=(fitz.TEXTFLAGS_RAWDICT | fitz.TEXT_INHIBIT_SPACES) & ~fitz.TEXT_PRESERVE_IMAGES
+    d = page.get_text('rawdict', flags=flags)
     for bi, block in enumerate(d['blocks']):
         for li, line in enumerate(block.get('lines', [])):
             for si, span in enumerate(line.get('spans', [])):
                 if span.get('chars'):
                     yield bi, li, si, span, line
 
-def _find_matches(doc: fitz.Document, edit: Edit) -> list[Match]:
+def _find_matches(doc: fitz.Document, edit: Edit, span_cache=None) -> list[Match]:
     if edit.page is not None and not (1 <= edit.page <= len(doc)):
         raise PrecisionError(f'Page {edit.page} is outside this PDF ({len(doc)} pages).')
     result=[]
     for page_index in (range(len(doc)) if edit.page is None else [edit.page - 1]):
         page=doc[page_index]
-        for bi,li,si,span,line in _all_spans(page):
+        if span_cache is not None and page_index not in span_cache:
+            span_cache[page_index]=list(_all_spans(page))
+        spans=span_cache[page_index] if span_cache is not None else _all_spans(page)
+        for bi,li,si,span,line in spans:
             chars=span['chars']
             sentence=''.join(c['c'] for c in chars)
             start=0
@@ -166,6 +172,8 @@ def _find_matches(doc: fitz.Document, edit: Edit) -> list[Match]:
                              int(span.get('alpha',255)), tuple(line.get('dir',(1,0))),
                              fitz.Rect(span['bbox']),max(0,end_x-origin.x)))
                 result[-1].origins = [fitz.Point(c['origin']) for c in chosen]
+                if len(edit.old)==1 and len(edit.new)>1:
+                    result[-1].context_origins = [fitz.Point(c['origin']) for c in chars]
                 start=stop
     return result
 
@@ -240,14 +248,14 @@ def _char_key(page, char, origin, font, size, color):
     return (page,char,round(origin[0],2),round(origin[1],2),font,round(size,3),color)
 
 
-def _character_inventory(doc):
+def _character_inventory(doc, span_cache=None):
     return Counter(_char_key(p.number,c['c'],c['origin'],s['font'],s['size'],s['color'])
-                   for p in doc for _,_,_,s,_ in _all_spans(p) for c in s['chars'])
+                   for p in doc for _,_,_,s,_ in (span_cache[p.number] if span_cache is not None and p.number in span_cache else _all_spans(p)) for c in s['chars'])
 
 
-def _plan_typography(page, match, edit, font):
+def _plan_typography(page, match, edit, font, text_traces=None):
     traces=[]
-    for trace in page.get_texttrace():
+    for trace in (page.get_texttrace() if text_traces is None else text_traces):
         if any(abs(c[2][0]-match.origin.x)<.01 and abs(c[2][1]-match.origin.y)<.01
                and chr(c[0])==edit.old[0] for c in trace['chars']):
             traces.append(trace)
@@ -269,6 +277,14 @@ def _plan_typography(page, match, edit, font):
     if any(abs(p.y-match.origin.y)>.001 for p in match.origins):
         raise PrecisionError('Raised or transformed glyphs require individual review.')
     new_widths=[float(font.text_length(c,fontsize=match.size)) for c in edit.new]
+    if len(edit.old)==1 and len(edit.new)>1 and len(match.context_origins)>1:
+        # A single glyph alone cannot reveal tracking. Measure its full source
+        # span, accepting expansion only when every interval agrees.
+        if any(abs(p.y-match.origin.y)>.001 for p in match.context_origins):
+            raise PrecisionError('Raised or transformed glyphs require individual review.')
+        context_widths=[float(font.text_length(c,fontsize=match.size)) for c in match.text]
+        offsets=[match.context_origins[i+1].x-match.context_origins[i].x-context_widths[i]
+                 for i in range(len(context_widths)-1)]
     uniform=bool(offsets) and max(offsets)-min(offsets)<=.015
     if uniform:
         match.tracking=sum(offsets)/len(offsets)
@@ -333,8 +349,11 @@ def _edit_pdf(data: bytes, instructions: str, resources, structured=None) -> dic
     if len(edits)>20: raise PrecisionError('Maximum 20 edit instructions per operation.')
     plans=[]
     occupied=[]
+    span_cache={}
+    trace_cache={}
+    font_cache={}
     for edit in edits:
-        matches=_find_matches(original,edit)
+        matches=_find_matches(original,edit,span_cache)
         if not matches:
             raise PrecisionError(f'Could not find "{edit.old}" as continuous editable text. It may be scanned, outlined, or split across font spans.')
         if edit.occurrence is not None and edit.all_occurrences:
@@ -361,11 +380,16 @@ def _edit_pdf(data: bytes, instructions: str, resources, structured=None) -> dic
             for annotation in current_page.annots() or []:
                 if fitz.Rect(annotation.rect).intersects(match.rect):
                     raise PrecisionError('The requested edit overlaps an annotation. This edit requires review before replacement.')
-            font_name, font_bytes, font = _resolve_font(original,match.page,match)
+            font_key=(match.page,match.font)
+            if font_key not in font_cache:
+                font_cache[font_key]=_resolve_font(original,match.page,match)
+            font_name, font_bytes, font = font_cache[font_key]
             for char in edit.new:
                 if char!=' ' and not font.has_glyph(ord(char),fallback=False):
                     raise PrecisionError(f'The original font "{match.font}" lacks glyph "{char}". A lookalike font would not be pixel-exact; edit refused.')
-            _plan_typography(original[match.page], match, edit, font)
+            if match.page not in trace_cache:
+                trace_cache[match.page]=current_page.get_texttrace()
+            _plan_typography(current_page, match, edit, font, trace_cache[match.page])
             width=match.target_length
             start_x=match.new_origins[0].x if match.new_origins else match.origin.x
             end_x=start_x+width
@@ -384,7 +408,7 @@ def _edit_pdf(data: bytes, instructions: str, resources, structured=None) -> dic
             if any(fitz.Rect(a.rect).intersects(target_area) for a in current_page.annots() or []):
                 raise PrecisionError('Replacement would overlap an annotation; edit refused.')
             # Width and collision check against all untargeted characters on same line
-            for bi,li,si,span,line in _all_spans(original[match.page]):
+            for bi,li,si,span,line in span_cache[match.page]:
                 if tuple(line.get('dir',(1,0)))!=(1.0,0.0): continue
                 if fitz.Rect(span['bbox']).y1 <= match.rect.y0 or fitz.Rect(span['bbox']).y0 >= match.rect.y1:
                     continue
@@ -407,7 +431,11 @@ def _edit_pdf(data: bytes, instructions: str, resources, structured=None) -> dic
         _apply(proof[p], [(e,m) for e,m in plans if m.page==p], reconstruct=True)
         if ImageChops.difference(_render(original[p]), _render(proof[p])).getbbox():
             raise PrecisionError(f'Original typography could not be reproduced pixel-for-pixel at 300 DPI on page {p+1}. No substitute or approximate rendering was exported.')
-    expected_chars=_character_inventory(original)
+    expected_chars=_character_inventory(original,span_cache)
+    # Do not retain extraction dictionaries during the full-document raster pass.
+    span_cache.clear()
+    trace_cache.clear()
+    font_cache.clear()
     for e,m in plans:
         for ch,origin in zip(e.old,m.origins):
             expected_chars[_char_key(m.page,ch,origin,m.font,m.size,m.color)] -= 1
@@ -476,3 +504,23 @@ def _edit_pdf(data: bytes, instructions: str, resources, structured=None) -> dic
 def edit_pdf(data: bytes, instructions: str, structured=None) -> dict:
     with ExitStack() as resources:
         return _edit_pdf(data, instructions, resources, structured)
+
+
+def inspect_pdf(data: bytes, page_number: int = 1) -> dict:
+    """Read-only source browser. A text span is a candidate, not an edit guarantee."""
+    with validate_pdf(data) as doc:
+        if isinstance(page_number,bool) or not isinstance(page_number,int) or not 1 <= page_number <= len(doc):
+            raise PrecisionError(f'Choose a page between 1 and {len(doc)}.')
+        page=doc[page_number-1]
+        spans=[]
+        for _,_,_,span,line in _all_spans(page):
+            text=''.join(c['c'] for c in span['chars'])
+            spans.append({'text':text,'font':span['font'],'size':round(span['size'],3),
+                          'color':f"#{span['color']:06X}",
+                          'bbox':list(span['bbox'])})
+            if len(spans)>2000:
+                raise PrecisionError('This page has too many text spans for the source browser. Use exact replacement rows.')
+        preview=io.BytesIO()
+        _render(page,scale=1.25).save(preview,format='PNG')
+        return {'page':page_number,'pages':len(doc),'spans':spans,'preview_png':preview.getvalue(),
+                'signature_present':integrity.signature_present(doc)}

@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 
 from pdf_worker import lifespan, run_pdf_job, WorkerUnavailable
 
-from engine import PrecisionError, edit_pdf
+from engine import PrecisionError, edit_pdf, inspect_pdf
 
 ROOT=Path(__file__).resolve().parent
 STORE=Path(tempfile.mkdtemp(prefix='precisionpdf_'))
@@ -24,6 +24,22 @@ app.mount('/static',StaticFiles(directory=ROOT/'src'/'static'),name='static')
 @app.get('/', response_class=HTMLResponse)
 def index():
     return (ROOT/'src'/'static'/'index.html').read_text(encoding='utf8')
+
+@app.post('/api/inspect')
+async def inspect(file: UploadFile=File(...), page: int=Form(1)):
+    if not file.filename or not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(422,detail='Upload a .pdf document.')
+    data=await file.read(25*1024*1024+1)
+    try:
+        result=await run_pdf_job(app,inspect_pdf,data,page)
+    except PrecisionError as exc:
+        raise HTTPException(422,detail=str(exc)) from exc
+    except WorkerUnavailable as exc:
+        raise HTTPException(503,detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(500,detail='Could not inspect this PDF.') from exc
+    result['image']='data:image/png;base64,'+base64.b64encode(result.pop('preview_png')).decode()
+    return result
 
 @app.post('/api/edit')
 async def edit(file: UploadFile=File(...), instructions: str=Form(''), edits_json: str=Form('[]')):
