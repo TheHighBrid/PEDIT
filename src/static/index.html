@@ -39,8 +39,9 @@
       </section>
       <section class="preview-panel" aria-label="Output preview">
         <div class="preview-heading"><div><div class="eyebrow">VISUAL CONTROL</div><h2>Proof, not promises.</h2></div><span id="previewState" class="state-pill">AWAITING DOCUMENT</span></div>
-        <div class="preview-toolbar"><div class="toggle" role="group" aria-label="Preview mode"><button id="beforeButton" class="active" type="button">Original</button><button id="afterButton" type="button">Edited</button><button id="compareButton" type="button">Compare</button></div><label>EDITED PAGE <select id="previewPage" aria-label="Edited page"></select></label><span id="pageLabel">PAGE 01</span></div>
-        <div class="document-stage" id="documentStage"><div id="emptyPreview" class="empty-preview"><div class="empty-paper"><span></span><span></span><span></span><span></span><span></span></div><h3>Your document, uninterrupted.</h3><p>Upload a PDF and create an edit to inspect before/after renderings.</p></div>
+        <div class="preview-toolbar"><div class="toggle" role="group" aria-label="Preview mode"><button id="fullPdfButton" class="active" type="button">Full PDF</button><button id="beforeButton" type="button">Original</button><button id="afterButton" type="button">Edited</button><button id="compareButton" type="button">Compare</button></div><label>EDITED PAGE <select id="previewPage" aria-label="Edited page"></select></label><span id="pageLabel">PAGE 01</span></div>
+        <div class="document-stage" id="documentStage"><div id="emptyPreview" class="empty-preview"><div class="empty-paper"><span></span><span></span><span></span><span></span><span></span></div><h3>Your document, uninterrupted.</h3><p>Upload a PDF to browse every page and select or copy source text before editing.</p></div>
+          <iframe id="sourcePdf" class="source-pdf" title="Original PDF viewer with page navigation, zoom and text selection" hidden></iframe>
           <div id="imageViewer" class="image-viewer" hidden><img id="beforeImg" alt="Original PDF page" /><img id="afterImg" alt="Edited PDF page" /></div>
         </div>
         <div id="compareControls" class="compare-controls" hidden><span>ORIGINAL</span><input id="comparison" type="range" min="0" max="100" value="50" aria-label="Comparison overlay opacity" /><span>EDITED</span></div>

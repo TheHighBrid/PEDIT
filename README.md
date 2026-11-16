@@ -17,6 +17,9 @@ Open http://127.0.0.1:8000. On macOS, `start_mac.command` also installs dependen
 
 ## Editing
 
+The original PDF appears immediately in the **Full PDF** viewer after upload, including native page navigation, zoom, and text selection where supported by the browser. It stays accessible during editing and after a validation error. After a successful edit, switch between **Full PDF**, **Original**, **Edited**, and **Compare** without reopening the document.
+
+
 Upload an unsigned PDF. Add structured replacement rows to choose a page, a match occurrence, and left, right or automatic alignment. Leave a row's replacement blank to remove the selected text. You can also enter one quoted instruction per line:
 
 ```text
@@ -78,3 +81,10 @@ PyMuPDF is dual licensed under AGPL and commercial terms. Review the license bef
 ## Next work
 
 Validate representative, non-sensitive PDFs from multiple authoring tools against expected edits. Then add a font-encoding-aware content-stream editor for cases currently refused, keeping the existing verification gates.
+
+
+### macOS native-library warnings
+
+If macOS blocks `_pydantic_core.cpython-312-darwin.so` or `_rust_notify.abi3.so`, do not bypass Gatekeeper globally. Launch the current source checkout using `zsh start_mac.command`. The launcher builds PEDIT's isolated dependencies in `~/Library/Application Support/PEDIT/`, verifies imports including the Rust-backed Python extensions, and then starts the local app. It leaves any older `.venv` inside the downloaded folder unused.
+
+A source ZIP is not a Git repository, so `git fetch` in its extracted directory will fail. Clone the repository if you need `git pull` updates; otherwise, download the current archive. No third-party upload is required to preview PDFs.

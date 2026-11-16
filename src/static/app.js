@@ -7,7 +7,8 @@ let ruleCount = 0;
 let inputVersion = 0;
 let outputName = null;
 let previews = [];
-function showPreview(i) { const p=previews[i]; $('beforeImg').src=p.before_image; $('afterImg').src=p.after_image; $('pageLabel').textContent='PAGE '+String(p.page).padStart(2,'0'); }
+let sourcePdfUrl = null;
+function showPreview(i) { if (!previews.length) return; const p=previews[i]; $('beforeImg').src=p.before_image; $('afterImg').src=p.after_image; $('pageLabel').textContent='PAGE '+String(p.page).padStart(2,'0'); }
 $('previewPage').addEventListener('change', e=>showPreview(Number(e.target.value)));
 
 function escapeHtml(str) {
@@ -36,8 +37,13 @@ function invalidateResults() {
   if (outputUrl && outputUrl.startsWith('blob:')) URL.revokeObjectURL(outputUrl);
   outputUrl = null; outputName = null; $('reportDownload').removeAttribute('href');
   $('results').hidden = true;
+  previews = [];
+  $('previewPage').replaceChildren();
+  $('previewPage').disabled = true;
   $('imageViewer').hidden = true;
-  $('emptyPreview').hidden = false;
+  $('sourcePdf').hidden = !selectedFile;
+  $('emptyPreview').hidden = !!selectedFile;
+  setMode(selectedFile ? 'source' : 'before');
   $('previewState').classList.remove('passed');
   $('previewState').textContent = selectedFile ? 'DOCUMENT LOADED' : 'AWAITING DOCUMENT';
 }
@@ -48,7 +54,10 @@ function chooseFile(file) {
   if (!file) return;
   if (!file.name.toLowerCase().endsWith('.pdf')) { setMessage('Only original PDF files are supported. A screenshot has no reusable PDF font objects.'); return; }
   if (file.size > 25 * 1024 * 1024) { setMessage('PDF must be smaller than 25 MB.'); return; }
+  if (sourcePdfUrl) URL.revokeObjectURL(sourcePdfUrl);
+  sourcePdfUrl = URL.createObjectURL(file);
   selectedFile = file;
+  $('sourcePdf').src = sourcePdfUrl;
   invalidateResults();
   $('uploadTitle').textContent = file.name;
   $('uploadSubtitle').textContent = `${(file.size / 1024).toFixed(0)} KB · READY FOR INSPECTION`;
@@ -63,12 +72,16 @@ for (const event of ['dragenter', 'dragover']) $('dropzone').addEventListener(ev
 for (const event of ['dragleave', 'drop']) $('dropzone').addEventListener(event, e => { e.preventDefault(); $('dropzone').classList.remove('dragover'); });
 $('dropzone').addEventListener('drop', e => chooseFile(e.dataTransfer?.files?.[0]));
 function setMode(mode) {
+  if (!previews.length && selectedFile) mode = 'source';
   currentMode = mode;
-  for (const [key,id] of [['before','beforeButton'],['after','afterButton'],['compare','compareButton']]) $(id).classList.toggle('active', mode === key);
+  for (const [key,id] of [['source','fullPdfButton'],['before','beforeButton'],['after','afterButton'],['compare','compareButton']]) $(id).classList.toggle('active', mode === key);
+  $('sourcePdf').hidden = mode !== 'source' || !selectedFile;
+  $('imageViewer').hidden = mode === 'source' || !previews.length;
+  $('emptyPreview').hidden = !!selectedFile || !!previews.length;
   $('afterImg').style.opacity = mode === 'before' ? '0' : mode === 'after' ? '1' : String(Number($('comparison').value) / 100);
   $('compareControls').hidden = mode !== 'compare';
 }
-for (const [mode,id] of [['before','beforeButton'],['after','afterButton'],['compare','compareButton']]) $(id).addEventListener('click', () => setMode(mode));
+for (const [mode,id] of [['source','fullPdfButton'],['before','beforeButton'],['after','afterButton'],['compare','compareButton']]) $(id).addEventListener('click', () => setMode(mode));
 $('comparison').addEventListener('input', () => { if (currentMode === 'compare') $('afterImg').style.opacity = String(Number($('comparison').value) / 100); });
 function pdfToBlob(b64) {
   const chars = atob(b64);
@@ -121,6 +134,7 @@ $('run').addEventListener('click', async () => {
     outputName = submittedFile.name.replace(/\.pdf$/i, '') + '_pedit.pdf';
     outputUrl = data.download_url;
     previews=data.previews;
+    $('previewPage').disabled = false;
     $('previewPage').replaceChildren(...previews.map((p,i)=>{const option=document.createElement('option');option.value=i;option.textContent='Page '+p.page;return option;}));
     showPreview(0);
     const report = data;

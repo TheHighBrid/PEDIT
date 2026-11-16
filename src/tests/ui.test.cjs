@@ -58,3 +58,33 @@ test('valid output downloads with the submitted document name',async()=>{
   assert.equal(h.get('results').hidden,false);assert.equal(h.downloads[0].name,'A_pedit.pdf');
   h.context.chooseFile({name:'B.pdf',size:100});h.get('download').listeners.click[0]();assert.equal(h.downloads.length,1);
 });
+
+test('full original PDF is visible on upload and during instructions changes',()=>{
+  const h=harness();
+  assert.equal(h.get('sourcePdf').hidden,false);
+  assert.equal(h.get('imageViewer').hidden,true);
+  assert.equal(h.get('sourcePdf').src,'blob:output');
+  h.get('instructions').listeners.input[0]();
+  assert.equal(h.get('sourcePdf').hidden,false);
+  assert.equal(h.get('emptyPreview').hidden,true);
+});
+test('failed edits never hide the uploaded PDF',async()=>{
+  const h=harness();
+  h.context.fetch=async()=>({ok:false,status:422,json:async()=>({detail:'Validation failed'})});
+  await h.run();
+  assert.equal(h.get('sourcePdf').hidden,false);
+  assert.equal(h.get('message').textContent,'Validation failed');
+});
+test('after a successful edit the full PDF remains accessible',async()=>{
+  const h=harness();
+  h.context.fetch=async()=>success();
+  await h.run();
+  assert.equal(h.get('sourcePdf').hidden,true);
+  assert.equal(h.get('imageViewer').hidden,false);
+  h.get('fullPdfButton').listeners.click[0]();
+  assert.equal(h.get('sourcePdf').hidden,false);
+  assert.equal(h.get('imageViewer').hidden,true);
+  h.get('afterButton').listeners.click[0]();
+  assert.equal(h.get('sourcePdf').hidden,true);
+  assert.equal(h.get('imageViewer').hidden,false);
+});
