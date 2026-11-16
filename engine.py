@@ -1,6 +1,6 @@
 """Conservative, locally executed PDF text replacement with measurable visual regression checks.
 
-MVP: horizontal, opaque, printable text in a single font span. If a change cannot be
+Supports opaque, orthogonally oriented printable text in a single font span. If a change cannot be
 validated, fail closed instead of silently changing formatting or surrounding content.
 """
 from __future__ import annotations
@@ -73,6 +73,8 @@ class Match:
     paint_color: tuple = ()
     tracking: float = 0.0
     spacing_mode: str = ''
+    rotation: int = 0
+    target_rect: Optional[fitz.Rect] = None
 
 BASE14 = {
     'Helvetica': 'helv', 'Helvetica-Bold': 'hebo', 'Helvetica-Oblique': 'heit',
@@ -245,6 +247,85 @@ def _character_inventory(doc):
                    for p in doc for _,_,_,s,_ in _all_spans(p) for c in s['chars'])
 
 
+def _orthogonal_rotation(direction):
+    """Map PDF text baseline direction to PyMuPDF's explicit rotation API.
+
+    Reject diagonal / sheared text rather than accidentally redrawing it horizontal.
+    """
+    x, y = direction
+    for degrees, axis in ((0, (1, 0)), (90, (0, -1)),
+                          (180, (-1, 0)), (270, (0, 1))):
+        if abs(x-axis[0]) < .0001 and abs(y-axis[1]) < .0001:
+            return degrees
+    return None
+
+
+def _along(point, baseline, direction):
+    return ((point.x-baseline.x)*direction[0] +
+            (point.y-baseline.y)*direction[1])
+
+
+def _vertical_plan(match, edit, font):
+    """Calculate advances in the original rotated baseline coordinate system."""
+    dx, dy = match.direction
+    advances = [float(font.text_length(c, fontsize=match.size)) for c in edit.old]
+    old_positions = [_along(p, match.origin, match.direction) for p in match.origins]
+    if any(abs((p.x-match.origin.x)*(-dy) + (p.y-match.origin.y)*dx) > .001
+           for p in match.origins):
+        raise PrecisionError('Sheared or displaced vertical glyphs cannot be reproduced safely.')
+    match.original_length = old_positions[-1] + advances[-1]
+    if not edit.new:
+        match.target_length = 0
+        match.spacing_mode = 'removal'
+        return
+    widths = [float(font.text_length(c, fontsize=match.size)) for c in edit.new]
+    offsets = [old_positions[i+1] - old_positions[i] - advances[i]
+               for i in range(len(advances)-1)]
+    uniform = bool(offsets) and max(offsets) - min(offsets) <= .015
+    if uniform:
+        match.tracking = sum(offsets) / len(offsets)
+    same_advances = (len(edit.old) == len(edit.new) and
+                     all(abs(a-b) < .015 for a,b in zip(advances[:-1], widths[:-1])))
+    if same_advances:
+        match.new_origins = list(match.origins)
+        match.spacing_mode = 'original glyph origins'
+    else:
+        if not uniform:
+            raise PrecisionError('Variable kerning cannot be extrapolated to different glyph metrics.')
+        match.spacing_mode = 'measured uniform tracking'
+        cursor = 0.0
+        for width in widths:
+            match.new_origins.append(fitz.Point(match.origin.x + dx * cursor,
+                                                match.origin.y + dy * cursor))
+            cursor += width + match.tracking
+    new_positions = [_along(p, match.origin, match.direction) for p in match.new_origins]
+    for i in range(len(widths) - 1):
+        overlap = (old_positions[i+1] - old_positions[i] - advances[i]
+                   if len(edit.old) == len(edit.new) else match.tracking)
+        if new_positions[i] + widths[i] > new_positions[i+1] + max(0, -overlap) + .02:
+            raise PrecisionError('Replacement glyphs would overlap at the original spacing; edit refused.')
+    match.target_length = new_positions[-1] + widths[-1]
+    if edit.align == 'right':
+        shift = match.original_length - match.target_length
+        match.new_origins = [fitz.Point(p.x + dx * shift, p.y + dy * shift)
+                             for p in match.new_origins]
+    # Preserve the original glyph cross-axis extent. Grow the target editing area
+    # only along the baseline for a longer / shifted replacement.
+    start = match.new_origins[0]
+    end = match.new_origins[-1] + fitz.Point(dx * widths[-1], dy * widths[-1])
+    old_end = match.origin + fitz.Point(dx * match.original_length,
+                                        dy * match.original_length)
+    shift_x = end.x - old_end.x
+    shift_y = end.y - old_end.y
+    match.target_rect = fitz.Rect(match.rect)
+    start_shift = start - match.origin
+    match.target_rect.include_rect(fitz.Rect(match.rect) +
+                                   (start_shift.x, start_shift.y, start_shift.x, start_shift.y))
+    match.target_rect.include_rect(fitz.Rect(match.rect) + (shift_x, shift_y, shift_x, shift_y))
+    match.target_rect.include_point(start)
+    match.target_rect.include_point(end)
+
+
 def _plan_typography(page, match, edit, font):
     traces=[]
     for trace in page.get_texttrace():
@@ -259,6 +340,9 @@ def _plan_typography(page, match, edit, font):
     match.paint_color=tuple(trace['color'])
     if len(match.paint_color) not in (1,3):
         raise PrecisionError('This text color space cannot be faithfully reproduced.')
+    if match.rotation:
+        _vertical_plan(match, edit, font)
+        return
     advances=[float(font.text_length(c,fontsize=match.size)) for c in edit.old]
     if not edit.new:
         match.target_length=0
@@ -314,7 +398,7 @@ def _apply(page, targets, reconstruct=False):
         origins=m.origins if reconstruct else m.new_origins
         for char,origin in zip(text,origins):
             page.insert_text(origin,char,fontname=m.font_name,fontsize=m.size,
-                             color=m.paint_color,overlay=True)
+                             color=m.paint_color,rotate=m.rotation,overlay=True)
 
 
 def _edit_pdf(data: bytes, instructions: str, resources, structured=None) -> dict:
@@ -346,8 +430,11 @@ def _edit_pdf(data: bytes, instructions: str, resources, structured=None) -> dic
             raise PrecisionError(f'"{edit.old}" appears {len(matches)} times (pages {pages}). Specify a page or use Replace all to prevent accidental changes.')
         selected=matches if edit.all_occurrences else [matches[edit.occurrence-1]] if edit.occurrence else matches[:1]
         for match in selected:
-            if match.alpha!=255 or abs(match.direction[0]-1)>0.0001 or abs(match.direction[1])>0.0001:
-                raise PrecisionError('Transparent or rotated text cannot be matched safely in this version.')
+            match.rotation = _orthogonal_rotation(match.direction)
+            if match.alpha!=255:
+                raise PrecisionError('Transparent text cannot be matched safely.')
+            if match.rotation is None:
+                raise PrecisionError('Non-orthogonal rotated or transformed text cannot be matched safely.')
             if match.rect.width<=0:
                 raise PrecisionError('Text has an invalid glyph bounding box.')
             # Interactive objects are intentionally not silently rewritten.
@@ -367,36 +454,49 @@ def _edit_pdf(data: bytes, instructions: str, resources, structured=None) -> dic
                     raise PrecisionError(f'The original font "{match.font}" lacks glyph "{char}". A lookalike font would not be pixel-exact; edit refused.')
             _plan_typography(original[match.page], match, edit, font)
             width=match.target_length
-            start_x=match.new_origins[0].x if match.new_origins else match.origin.x
-            end_x=start_x+width
             match.font_name=font_name
             match.font_bytes=font_bytes
             match.target_length=width
-            if edit.new and (start_x<2 or end_x>(original[match.page].rect * original[match.page].derotation_matrix).x1-2):
-                raise PrecisionError(f'"{edit.new}" would extend beyond page {match.page+1}.')
-            target_area=fitz.Rect(match.rect)
-            target_area.x0=min(target_area.x0,start_x)
-            target_area.x1=max(target_area.x1,end_x)
+            if match.rotation:
+                target_area = match.target_rect or fitz.Rect(match.rect)
+                page_bounds = original[match.page].rect * original[match.page].derotation_matrix
+                safe_bounds = fitz.Rect(2, 2, page_bounds.width-2, page_bounds.height-2)
+                if edit.new and not safe_bounds.contains(target_area):
+                    raise PrecisionError(f'"{edit.new}" would extend beyond page {match.page+1}.')
+                start_x, end_x = target_area.x0, target_area.x1
+            else:
+                start_x=match.new_origins[0].x if match.new_origins else match.origin.x
+                end_x=start_x+width
+                if edit.new and (start_x<2 or end_x>(original[match.page].rect * original[match.page].derotation_matrix).x1-2):
+                    raise PrecisionError(f'"{edit.new}" would extend beyond page {match.page+1}.')
+                target_area=fitz.Rect(match.rect)
+                target_area.x0=min(target_area.x0,start_x)
+                target_area.x1=max(target_area.x1,end_x)
+            match.target_rect = target_area
             if any(fitz.Rect(obj['from']).intersects(target_area) for obj in current_page.get_links()):
                 raise PrecisionError('Replacement would overlap a link; edit refused.')
             if any(fitz.Rect(w.rect).intersects(target_area) for w in current_page.widgets() or []):
                 raise PrecisionError('Replacement would overlap a form field; edit refused.')
             if any(fitz.Rect(a.rect).intersects(target_area) for a in current_page.annots() or []):
                 raise PrecisionError('Replacement would overlap an annotation; edit refused.')
-            # Width and collision check against all untargeted characters on same line
+            # Reject replacement that would intersect untargeted characters.
             for bi,li,si,span,line in _all_spans(original[match.page]):
-                if tuple(line.get('dir',(1,0)))!=(1.0,0.0): continue
-                if fitz.Rect(span['bbox']).y1 <= match.rect.y0 or fitz.Rect(span['bbox']).y0 >= match.rect.y1:
-                    continue
+                if not match.rotation:
+                    if tuple(line.get('dir',(1,0)))!=(1.0,0.0): continue
+                    if fitz.Rect(span['bbox']).y1 <= match.rect.y0 or fitz.Rect(span['bbox']).y0 >= match.rect.y1:
+                        continue
                 for ci,char_obj in enumerate(span['chars']):
                     if bi==match.block and li==match.line and si==match.span and match.start<=ci<match.end:
                         continue
                     box=fitz.Rect(char_obj['bbox'])
-                    # Compare mostly baseline-horizontal overlap; limit intrusion into other glyphs
-                    if edit.new and box.x0 < end_x - 0.4 and box.x1 > start_x + 0.4:
+                    if match.rotation:
+                        intersection = box & target_area
+                        if edit.new and not intersection.is_empty and intersection.get_area() > .4:
+                            raise PrecisionError(f'"{edit.new}" would collide with existing text on page {match.page+1}. Shorten replacement or edit the whole phrase.')
+                    elif edit.new and box.x0 < end_x - 0.4 and box.x1 > start_x + 0.4:
                         raise PrecisionError(f'"{edit.new}" would collide with existing text on page {match.page+1}. Shorten replacement or edit the whole phrase.')
             for prior in occupied:
-                if prior.page==match.page and (prior.rect.intersects(match.rect) or (prior.new_origins and match.new_origins and fitz.Rect(prior.new_origins[0].x,prior.rect.y0,prior.new_origins[0].x+prior.target_length,prior.rect.y1).intersects(fitz.Rect(start_x,match.rect.y0,end_x,match.rect.y1)))):
+                if prior.page==match.page and (prior.rect.intersects(match.rect) or (prior.target_rect and prior.target_rect.intersects(target_area))):
                     raise PrecisionError('Two edit instructions overlap the same text region.')
             occupied.append(match)
             plans.append((edit,match))
@@ -438,9 +538,12 @@ def _edit_pdf(data: bytes, instructions: str, resources, structured=None) -> dic
         rects=[]
         for e,m in plans:
             if m.page!=p: continue
-            rects.append(fitz.Rect(min(m.origin.x,m.new_origins[0].x if m.new_origins else m.origin.x)-2,min(m.rect.y0,m.origin.y-m.size*1.6)-1,
-                                   max(m.rect.x1,(m.new_origins[0].x if m.new_origins else m.origin.x)+m.target_length)+2,
-                                   max(m.rect.y1,m.origin.y+m.size*.6)+1))
+            if m.rotation:
+                rects.append(fitz.Rect(m.target_rect) + (-2, -2, 2, 2))
+            else:
+                rects.append(fitz.Rect(min(m.origin.x,m.new_origins[0].x if m.new_origins else m.origin.x)-2,min(m.rect.y0,m.origin.y-m.size*1.6)-1,
+                                       max(m.rect.x1,(m.new_origins[0].x if m.new_origins else m.origin.x)+m.target_length)+2,
+                                       max(m.rect.y1,m.origin.y+m.size*.6)+1))
         rects=[rect * reference[p].rotation_matrix for rect in rects]
         ok, fraction=_validate_untouched(_render(reference[p]),_render(result[p]),rects)
         if not ok:
@@ -453,7 +556,8 @@ def _edit_pdf(data: bytes, instructions: str, resources, structured=None) -> dic
     # Validate text replacement outcome with new extraction, plus page count invariance
     for e,m in plans:
         if not e.new: continue
-        area=fitz.Rect(m.new_origins[0].x-2,m.rect.y0-4,m.new_origins[0].x+m.target_length+5,m.rect.y1+4)
+        area=(fitz.Rect(m.target_rect) + (-4, -4, 4, 4) if m.rotation else
+              fitz.Rect(m.new_origins[0].x-2,m.rect.y0-4,m.new_origins[0].x+m.target_length+5,m.rect.y1+4))
         text=result[m.page].get_text(clip=area, flags=fitz.TEXTFLAGS_TEXT | fitz.TEXT_INHIBIT_SPACES)
         if e.new not in text:
             raise PrecisionError(f'Validation failed: replacement "{e.new}" is not selectable on page {m.page+1}.')
