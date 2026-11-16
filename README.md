@@ -52,7 +52,9 @@ Every verification report includes source/output SHA-256 hashes, source/output s
 
 ## Limits
 
-This is **not a universal pixel-perfect PDF editor**. Changes necessarily alter the selected content. Matching source glyphs in one renderer does not guarantee unseen replacement glyphs have the correct contextual shaping or appearance in every renderer. Variable kerning, complex scripts, scans, outlines, rotated or transparent text, layered text, stroked text, clipped/transformed text, unavailable fonts, unsupported encodings and complex color workflows may be refused.
+Orthogonal text (0°, 90°, 180°, 270°), including vertical identifiers, is supported when source glyphs, original fill color, and geometry can be reconstructed exactly in the verification renderer. Unchanged content and source metadata remain subject to the same integrity checks; unsafe transforms are refused.
+
+This is **not a universal pixel-perfect PDF editor**. Changes necessarily alter the selected content. Matching source glyphs in one renderer does not guarantee unseen replacement glyphs have the correct contextual shaping or appearance in every renderer. Variable kerning, complex scripts, scans, outlines, diagonal / non-orthogonal rotated text, transparent text, layered text, stroked text, clipped/transformed text, unavailable fonts, unsupported encodings and complex color workflows may be refused.
 
 Runtime visual verification uses MuPDF at 300 DPI. The test suite also checks a fixture with Poppler, when installed; Poppler is not a second runtime export gate. Print separations, original color-space operators, tagged-PDF accessibility, PDF/A/PDF/X compliance, JavaScript/actions and all low-level document objects are not exhaustively certified. Conformance-sensitive documents require an appropriate independent validator and professional review. The source reconstruction gate is deliberately strict and can reject documents that a less conservative editor would accept.
 
