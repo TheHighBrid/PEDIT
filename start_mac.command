@@ -54,5 +54,4 @@ if [[ ! -f "$stamp" ]] || [[ "$(cat "$stamp" 2>/dev/null)" != "$requirements_has
   print -r -- "$requirements_hash" > "$stamp"
 fi
 
-(sleep 2; open 'http://127.0.0.1:8000') &
-exec "$venv/bin/python" -m uvicorn app:app --host 127.0.0.1 --port 8000
+exec "$venv/bin/python" launch_classic.py "$@"

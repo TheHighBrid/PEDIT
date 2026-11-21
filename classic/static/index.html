@@ -1,0 +1,1799 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>PrecisionPDF — Grid-Locked Vector PDF Editor</title>
+  <style>
+    :root {
+      --bg: #f4f6f8;
+      --paper: #ffffff;
+      --ink: #111820;
+      --muted: #52606d;
+      --line: #d9e2ec;
+      --accent: #0f766e;
+      --accent-hover: #0d9488;
+      --accent-soft: #e6fffa;
+      --insert-ink: #1d4ed8;
+      --insert-soft: #eff6ff;
+      --warn: #b45309;
+      --err: #b91c1c;
+      --err-bg: #fef2f2;
+      --ok: #15803d;
+      --ok-bg: #f0fdf4;
+      --mono: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+      --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Helvetica, Arial, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--sans);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+    header {
+      background: var(--paper);
+      border-bottom: 1px solid var(--line);
+      padding: 10px 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 40;
+    }
+    .brand-wrap {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand {
+      font-weight: 800;
+      font-size: 16px;
+      letter-spacing: -0.02em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .badge {
+      font-family: var(--mono);
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      border: 1px solid #99f6e4;
+      font-weight: 600;
+    }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .btn {
+      border: 1px solid var(--line);
+      background: var(--paper);
+      color: var(--ink);
+      border-radius: 6px;
+      padding: 7px 13px;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      text-decoration: none;
+      transition: all 0.12s ease;
+    }
+    .btn:hover:not(:disabled) {
+      border-color: #9fb3c8;
+      background: #f8fafc;
+    }
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .btn-primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .btn-primary:hover:not(:disabled) {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+    }
+    .btn-sm {
+      padding: 4px 9px;
+      font-size: 12px;
+    }
+    .workspace {
+      display: grid;
+      grid-template-columns: minmax(420px, 1.12fr) minmax(440px, 1fr);
+      gap: 16px;
+      padding: 16px 20px;
+      max-width: 1720px;
+      margin: 0 auto;
+      align-items: start;
+    }
+    @media (max-width: 1100px) {
+      .workspace { grid-template-columns: 1fr; }
+    }
+    .panel {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      box-shadow: 0 2px 6px rgba(15, 23, 42, 0.03);
+      overflow: hidden;
+    }
+    .panel-header {
+      padding: 11px 14px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      background: #f8fafc;
+      flex-wrap: wrap;
+    }
+    .panel-title {
+      font-weight: 700;
+      font-size: 13.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .upload-bar {
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: #fcfdfd;
+      flex-wrap: wrap;
+    }
+    .file-drop {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+      padding: 6px 12px;
+      border: 1.5px dashed #9fb3c8;
+      border-radius: 7px;
+      background: #f8fafc;
+      font-weight: 600;
+      font-size: 13px;
+    }
+    .file-drop:hover {
+      border-color: var(--accent);
+      background: var(--accent-soft);
+    }
+    .file-drop input { display: none; }
+    .page-tabs {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      flex-wrap: wrap;
+    }
+    .page-tab {
+      border: 1px solid var(--line);
+      background: var(--paper);
+      border-radius: 5px;
+      padding: 4px 9px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .page-tab.active {
+      background: var(--ink);
+      color: #fff;
+      border-color: var(--ink);
+    }
+    .canvas-toolbar {
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-size: 12px;
+      background: #fff;
+      flex-wrap: wrap;
+    }
+    .toggle-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .toggle-group label {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      cursor: pointer;
+      font-weight: 500;
+      color: var(--muted);
+    }
+    .canvas-scroll {
+      position: relative;
+      max-height: calc(100vh - 205px);
+      overflow: auto;
+      background: #e2e8f0;
+      padding: 16px;
+      display: flex;
+      justify-content: center;
+    }
+    .page-stage {
+      position: relative;
+      background: #fff;
+      box-shadow: 0 8px 24px rgba(15, 23, 42, 0.14);
+      user-select: none;
+      max-width: 100%;
+    }
+    .page-stage img {
+      display: block;
+      width: 100%;
+      height: auto;
+      pointer-events: none;
+    }
+    .overlay-layer {
+      position: absolute;
+      inset: 0;
+    }
+    .grid-rail {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      border-left: 1px dashed rgba(15, 118, 110, 0.35);
+      pointer-events: none;
+    }
+    .grid-rail.right-rail {
+      border-left-color: rgba(29, 78, 216, 0.35);
+    }
+    .cell-box {
+      position: absolute;
+      border: 1px solid rgba(21, 128, 61, 0.42);
+      background: rgba(34, 197, 94, 0.06);
+      border-radius: 2px;
+      cursor: pointer;
+      transition: background 0.1s, border-color 0.1s;
+    }
+    .cell-box:hover {
+      border-color: #15803d;
+      background: rgba(34, 197, 94, 0.20);
+      z-index: 10;
+    }
+    .cell-box.modified {
+      border: 1.5px solid #0f766e;
+      background: rgba(20, 184, 166, 0.25);
+    }
+    .cell-box.selected {
+      border: 1.5px solid #b45309;
+      background: rgba(245, 158, 11, 0.24);
+    }
+    .cell-box.vertical {
+      border-color: rgba(124, 58, 237, 0.55);
+      background: rgba(139, 92, 246, 0.08);
+    }
+    .cell-box.vertical:hover {
+      border-color: #6d28d9;
+      background: rgba(139, 92, 246, 0.22);
+    }
+    .slot-box {
+      position: absolute;
+      border: 1px dashed rgba(29, 78, 216, 0.45);
+      background: rgba(59, 130, 246, 0.05);
+      border-radius: 2px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      color: rgba(29, 78, 216, 0.7);
+      font-family: var(--mono);
+    }
+    .slot-box:hover, .slot-box.modified {
+      border-style: solid;
+      border-color: var(--insert-ink);
+      background: rgba(59, 130, 246, 0.2);
+      color: var(--insert-ink);
+      font-weight: 700;
+      z-index: 11;
+    }
+    /* Floating inline cell popover on canvas */
+    .inline-popover {
+      position: absolute;
+      z-index: 30;
+      background: #111820;
+      color: #fff;
+      padding: 10px 12px;
+      border-radius: 8px;
+      box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32);
+      min-width: 270px;
+      display: none;
+    }
+    .inline-popover .pop-meta {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: #99f6e4;
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .inline-popover input {
+      width: 100%;
+      padding: 6px 8px;
+      border-radius: 5px;
+      border: 1px solid #475569;
+      background: #1e293b;
+      color: #fff;
+      font-family: var(--mono);
+      font-size: 13px;
+      margin-bottom: 7px;
+    }
+    .inline-popover .pop-actions {
+      display: flex;
+      justify-content: space-between;
+      gap: 6px;
+    }
+    /* Right panel tabs & batch table */
+    .mode-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--line);
+      background: #f8fafc;
+    }
+    .mode-tab {
+      flex: 1;
+      text-align: center;
+      padding: 10px 12px;
+      font-weight: 700;
+      font-size: 12.5px;
+      cursor: pointer;
+      border-bottom: 2.5px solid transparent;
+      color: var(--muted);
+    }
+    .mode-tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+      background: #fff;
+    }
+    .batch-bar {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--line);
+      background: #f8fafc;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .batch-row {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      flex-wrap: wrap;
+    }
+    .input-sm, select.input-sm {
+      padding: 5px 8px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      font-size: 12.5px;
+      background: #fff;
+      color: var(--ink);
+    }
+    .batch-drawer {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--line);
+      background: #fffbeb;
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .batch-drawer.open { display: flex; }
+    .cell-list {
+      max-height: calc(100vh - 330px);
+      overflow-y: auto;
+      divide-y: 1px solid var(--line);
+    }
+    .cell-row {
+      display: grid;
+      grid-template-columns: 26px 1fr 1.15fr auto;
+      gap: 8px;
+      align-items: center;
+      padding: 7px 12px;
+      border-bottom: 1px solid #f0f4f8;
+      font-size: 12.5px;
+    }
+    .cell-row:hover { background: #f8fafc; }
+    .cell-row.edited { background: var(--accent-soft); }
+    .cell-row.inserted { background: var(--insert-soft); }
+    .cell-orig {
+      font-family: var(--mono);
+      font-size: 12px;
+      color: var(--ink);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .cell-meta-sub {
+      font-size: 10.5px;
+      color: var(--muted);
+      font-family: var(--mono);
+    }
+    .cell-input {
+      width: 100%;
+      padding: 5px 8px;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      font-family: var(--mono);
+      font-size: 12.5px;
+    }
+    .cell-input:focus {
+      outline: 2px solid var(--accent);
+      border-color: transparent;
+    }
+    .status-banner {
+      margin: 10px 14px;
+      padding: 10px 12px;
+      border-radius: 7px;
+      font-size: 12.5px;
+      display: none;
+    }
+    .status-banner.error {
+      display: block;
+      background: var(--err-bg);
+      color: var(--err);
+      border: 1px solid #fecaca;
+    }
+    .status-banner.ok {
+      display: block;
+      background: var(--ok-bg);
+      color: var(--ok);
+      border: 1px solid #bbf7d0;
+    }
+    .EmptyState {
+      padding: 56px 24px;
+      text-align: center;
+      color: var(--muted);
+    }
+    textarea.instructions-area {
+      width: 100%;
+      min-height: 240px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 10px;
+      font-family: var(--mono);
+      font-size: 12.5px;
+      resize: vertical;
+    }
+    .pill-rule {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .pill-allowed { background: #dcfce7; color: #166534; }
+    .pill-locked { background: #dbeafe; color: #1e40af; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand-wrap">
+      <div class="brand">
+        <span>PrecisionPDF</span>
+        <span class="badge">Grid-Locked Vector Engine</span>
+      </div>
+      <span class="pill-rule pill-allowed">✓ Baseline & Column Locked</span>
+      <span class="pill-rule pill-locked">Revised copy exports</span>
+    </div>
+    <div class="header-actions">
+      <span id="pendingCountBadge" class="badge" style="display:none">0 pending changes</span>
+      <button type="button" id="resetEditsBtn" class="btn btn-sm" style="display:none">Reset Pending</button>
+      <button type="button" id="applyBtn" class="btn btn-primary" disabled>Apply Precision Edits</button>
+      <a id="downloadBtn" class="btn" style="display:none;background:#111820;color:#fff;border-color:#111820" download="precision-edited.pdf">⬇ Download PDF</a>
+    </div>
+  </header>
+
+  <div class="workspace">
+    <!-- LEFT: Interactive PDF Page Canvas with Grid Slots -->
+    <section class="panel">
+      <div class="upload-bar">
+        <label class="file-drop">
+          <input id="fileInput" type="file" accept=".pdf,application/pdf" />
+          <span id="fileLabel">📂 Choose or Drop PDF Document…</span>
+        </label>
+        <div id="pageTabs" class="page-tabs"></div>
+      </div>
+
+      <div class="canvas-toolbar">
+        <div class="toggle-group">
+          <label><input type="checkbox" id="showCellsToggle" checked /> Editable Cells (Green)</label>
+          <label><input type="checkbox" id="showSlotsToggle" checked /> + Grid Insertion Slots (Blue)</label>
+          <label><input type="checkbox" id="showRailsToggle" /> Column Alignment Rails</label>
+          <label title="Original artwork and stamps are preserved"><input type="checkbox" id="cleanOverlaysToggle" disabled /> Preserve original stamps</label>
+        </div>
+        <span id="pageMetaLabel" style="font-family:var(--mono);color:var(--muted)">No PDF loaded</span>
+      </div>
+
+      <div id="canvasScroll" class="canvas-scroll">
+        <div id="emptyCanvasState" class="EmptyState">
+          <div style="font-size:32px;margin-bottom:8px">📄</div>
+          <div style="font-weight:700;color:var(--ink);margin-bottom:4px">Upload a PDF to inspect its exact typography & grid</div>
+          <div>Click any green cell on the page to edit in-place, click any <b>+</b> slot to insert grid-aligned text, or use the Batch Table on the right.</div>
+        </div>
+        <div id="pageStage" class="page-stage" style="display:none">
+          <img id="pageImage" alt="PDF Page Preview" />
+          <div id="overlayLayer" class="overlay-layer"></div>
+          <!-- Floating Inline Editor Popover -->
+          <div id="inlinePopover" class="inline-popover">
+            <div class="pop-meta">
+              <span id="popFontInfo">FRUTIGERROMAN 9pt</span>
+              <span id="popAlignInfo">Left @ x=112.8</span>
+            </div>
+            <input type="text" id="popInput" placeholder="Enter text (leave empty to delete)…" />
+            <div class="pop-actions">
+              <div style="display:flex;gap:5px">
+                <button type="button" id="popSaveBtn" class="btn btn-primary btn-sm">Set Cell</button>
+                <button type="button" id="popAddLineBtn" class="btn btn-sm" style="background:#1e40af;color:#fff;border-color:#1e40af">+ Line Below</button>
+              </div>
+              <button type="button" id="popCloseBtn" class="btn btn-sm" style="background:transparent;color:#cbd5e1;border-color:#475569">✕</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- RIGHT: Fast Spreadsheet Table + Batch Selection + Instructions -->
+    <section class="panel">
+      <div class="mode-tabs">
+        <div class="mode-tab active" data-tab="gridTab">1. Grid & Batch</div>
+        <div class="mode-tab" data-tab="instructionsTab">2. Instructions</div>
+        <div class="mode-tab" data-tab="diffTab">3. Diff</div>
+        <div class="mode-tab" data-tab="qaTab" id="qaTabBtn">4. Auto-QA & Math</div>
+        <div class="mode-tab" data-tab="kernelTab" id="kernelTabBtn">5. Self-Improvement</div>
+      </div>
+
+      <div id="statusBanner" class="status-banner"></div>
+
+      <!-- TAB 1: GRID & BATCH EDITOR -->
+      <div id="gridTab" class="tab-pane">
+        <div class="batch-bar">
+          <div class="batch-row">
+            <input type="search" id="searchCellsInput" class="input-sm" placeholder="Filter text (e.g. 1.44,Jul,Lyft)…" style="flex:1;min-width:150px" />
+            <select id="colFilterSelect" class="input-sm">
+              <option value="all">All Columns & Sections</option>
+            </select>
+            <label style="font-size:12px;display:inline-flex;align-items:center;gap:4px;cursor:pointer">
+              <input type="checkbox" id="showEmptyInTableToggle" /> Show + Empty Slots
+            </label>
+          </div>
+          <div class="batch-row" style="justify-content:space-between">
+            <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">
+              <button type="button" id="selAllBtn" class="btn btn-sm">☑ Select Visible</button>
+              <button type="button" id="selNoneBtn" class="btn btn-sm">☐ Clear</button>
+              <span id="selCountLabel" style="font-family:var(--mono);font-size:11.5px;color:var(--muted)">0 selected</span>
+            </div>
+            <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">
+              <label style="font-size:11.5px;display:inline-flex;align-items:center;gap:4px;cursor:pointer;font-weight:600;color:#1e40af" title="Automatically update dependent row products and column subtotals/totals when numbers change">
+                <input type="checkbox" id="autoCalcToggle" checked /> ⚡ Auto-Calculator
+              </label>
+              <button type="button" id="clipboardHistoryBtn" class="btn btn-sm" title="Open Smart Clipboard History">📋 Clipboard</button>
+              <button type="button" id="openBatchReplaceBtn" class="btn btn-sm">⚡ Batch Fill / Replace</button>
+              <button type="button" id="batchDeleteBtn" class="btn btn-sm" style="color:var(--err)">🗑 Delete Selected</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Collapsible Clipboard History Drawer -->
+        <div id="clipboardDrawer" class="batch-drawer" style="background:#eff6ff">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <strong style="font-size:12.5px;color:#1e40af">📋 Smart Clipboard & Snippet Palette</strong>
+            <button type="button" id="closeClipboardDrawerBtn" class="btn btn-sm">✕</button>
+          </div>
+          <div style="font-size:11.5px;color:var(--muted)">
+            Click any snippet to copy it directly or paste into the active cell:
+          </div>
+          <div id="clipboardChipsContainer" style="display:flex;gap:6px;flex-wrap:wrap;max-height:100px;overflow-y:auto;padding:4px 0">
+            <span style="color:var(--muted);font-size:11px">Clipboard is empty. Copy cell values or load a PDF to populate smart snippets.</span>
+          </div>
+        </div>
+        <div id="batchDrawer" class="batch-drawer">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <strong style="font-size:12.5px">Batch Action on Selected Cells (or Visible Cells if none checked)</strong>
+            <button type="button" id="closeBatchDrawerBtn" class="btn btn-sm">✕</button>
+          </div>
+          <div class="batch-row">
+            <input type="text" id="batchFindInput" class="input-sm" placeholder="Find substring (optional)…" style="flex:1" />
+            <input type="text" id="batchReplaceInput" class="input-sm" placeholder="Replace with / Set all to…" style="flex:1" />
+            <button type="button" id="runBatchReplaceBtn" class="btn btn-primary btn-sm">Apply to Selection</button>
+          </div>
+          <div style="display:flex;gap:8px;align-items:flex-start">
+            <textarea id="batchPasteList" class="input-sm" rows="3" style="flex:1;font-family:var(--mono)" placeholder="Or paste a multi-line list of values (1 value per row) to fill selected cells top-to-bottom…"></textarea>
+            <button type="button" id="runBatchPasteBtn" class="btn btn-sm" style="background:#1e40af;color:#fff;border-color:#1e40af">Paste Sequence ↓</button>
+          </div>
+        </div>
+
+        <div id="cellListContainer" class="cell-list">
+          <div class="EmptyState">Upload a PDF to view and batch-edit all grid-aligned cells.</div>
+        </div>
+      </div>
+
+      <!-- TAB 2: PLAIN-ENGLISH INSTRUCTIONS -->
+      <div id="instructionsTab" class="tab-pane" style="display:none;padding:14px">
+        <p style="margin:0 0 8px;color:var(--muted);font-size:12.5px">
+          You can also type or paste instructions directly. Supported grid-locked commands:
+        </p>
+        <div style="font-family:var(--mono);font-size:11.5px;background:#f8fafc;padding:8px 10px;border-radius:6px;border:1px solid var(--line);margin-bottom:10px">
+          On page 1, replace "Lyft" with "Rexall"<br/>
+          On page 1, replace "1.44" with "18.45"<br/>
+          On page 1, insert "Media" below "Living Book / Editorial"<br/>
+          On page 1, Delete "Temporary Hold"
+        </div>
+        <textarea id="instructionsInput" class="instructions-area" placeholder='On page 1, replace "Old" with "New"&#10;On page 1, insert "Line 2" below "Line 1"'></textarea>
+      </div>
+
+      <!-- TAB 3: VERIFICATION & BEFORE/AFTER -->
+      <div id="diffTab" class="tab-pane" style="display:none;padding:14px">
+        <div id="verificationSummary" style="font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:12px">
+          No edits applied yet.
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div>
+            <div style="font-weight:700;font-size:12px;margin-bottom:4px">Before (Original)</div>
+            <img id="beforeImg" style="width:100%;border:1px solid var(--line);border-radius:6px;display:none" />
+          </div>
+          <div>
+            <div style="font-weight:700;font-size:12px;margin-bottom:4px">After (Grid-Verified Vector Output)</div>
+            <img id="afterImg" style="width:100%;border:1px solid var(--line);border-radius:6px;display:none" />
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 4: AUTO-QA & MATH AUDIT -->
+      <div id="qaTab" class="tab-pane" style="display:none;padding:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px">
+          <div>
+            <div style="font-weight:800;font-size:14px">Auto-Calculator & Quality Audit Engine</div>
+            <div style="font-size:12px;color:var(--muted)">Infers number roles, tracks product & sum dependencies, detects arithmetic discrepancies & typos</div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button type="button" id="recalcNowBtn" class="btn btn-sm" style="background:#1e40af;color:#fff;border-color:#1e40af">⚡ Recalculate Dependencies</button>
+            <button type="button" id="autoFixDiscrepanciesBtn" class="btn btn-primary btn-sm">🪄 Auto-Correct All Discrepancies</button>
+          </div>
+        </div>
+
+        <div style="margin-bottom:14px">
+          <div style="font-weight:700;font-size:12.5px;margin-bottom:6px;display:flex;align-items:center;gap:6px">
+            <span>Discrepancy & Quality Check Report</span>
+            <span id="qaDiscrepancyBadge" class="badge">0 issues</span>
+          </div>
+          <div id="qaDiscrepanciesList" style="display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto;padding-right:4px">
+            <div class="EmptyState" style="padding:24px">No document loaded. Upload a PDF to run the automated quality check.</div>
+          </div>
+        </div>
+
+        <div>
+          <div style="font-weight:700;font-size:12.5px;margin-bottom:6px">Recognized Number Roles & Dependency Formulas</div>
+          <div id="qaFormulasList" style="display:flex;flex-direction:column;gap:6px;max-height:200px;overflow-y:auto;padding-right:4px">
+            <div class="EmptyState" style="padding:24px">No arithmetic formulas detected yet.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 5: AUTONOMOUS SELF-IMPROVEMENT KERNEL -->
+      <div id="kernelTab" class="tab-pane" style="display:none;padding:14px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+          <div>
+            <div style="font-weight:800;font-size:14px">Pedit Autonomous Self-Improvement Kernel</div>
+            <div style="font-size:12px;color:var(--muted)">3-Tier Evaluator • Defect Clusterer • Harness Synthesizer • Statistical Promotion Gate</div>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button type="button" id="runKernelCycleBtn" class="btn btn-primary btn-sm">⚡ Run Improvement Cycle</button>
+            <button type="button" id="simKernelTournamentBtn" class="btn btn-sm" style="background:#1e40af;color:#fff;border-color:#1e40af">🧪 Run Self-Healing Tournament</button>
+            <button type="button" id="rollbackKernelBtn" class="btn btn-sm">↩ Rollback</button>
+          </div>
+        </div>
+
+        <div id="kernelMetricsGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px"></div>
+
+        <div style="margin-bottom:12px">
+          <div style="font-weight:700;font-size:12px;margin-bottom:4px">Active Champion Harness (<span id="kernelChampLabel" style="font-family:var(--mono);color:var(--accent)">-</span>)</div>
+          <pre id="kernelHarnessPre" style="margin:0;padding:8px 10px;background:#f8fafc;border:1px solid var(--line);border-radius:6px;font-family:var(--mono);font-size:11px;overflow-x:auto"></pre>
+        </div>
+
+        <div style="margin-bottom:12px">
+          <div style="font-weight:700;font-size:12px;margin-bottom:4px">Promotion Gate History (Welch/Wilcoxon + Cohen's d + 0 Regressions)</div>
+          <div id="kernelPromotionsList" style="font-family:var(--mono);font-size:11.5px;display:flex;flex-direction:column;gap:5px"></div>
+        </div>
+
+        <div>
+          <div style="font-weight:700;font-size:12px;margin-bottom:4px">Defect Clusters & Recent Traced Runs</div>
+          <div id="kernelClustersList" style="font-family:var(--mono);font-size:11.5px;display:flex;flex-direction:column;gap:5px"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <datalist id="smartAutocompleteList"></datalist>
+  <script>
+    let currentFile = null;
+    let sessionToken = null;
+    let pdfState = null;          // result from /api/inspect
+    let currentPageIdx = 0;       // 0-based
+    // Map of pending edits keyed by item key (`span:p1_s12` or `slot:p1_r3_c5` or `sub:p1_s12`)
+    let pendingEdits = new Map();
+    let selectedKeys = new Set();
+    let activePopoverTarget = null;
+    let clipboardHistory = [];
+    let autoCalcEnabled = true;
+
+    const fileInput = document.getElementById('fileInput');
+    const fileLabel = document.getElementById('fileLabel');
+    const pageTabs = document.getElementById('pageTabs');
+    const pageMetaLabel = document.getElementById('pageMetaLabel');
+    const emptyCanvasState = document.getElementById('emptyCanvasState');
+    const pageStage = document.getElementById('pageStage');
+    const pageImage = document.getElementById('pageImage');
+    const overlayLayer = document.getElementById('overlayLayer');
+    const inlinePopover = document.getElementById('inlinePopover');
+    const popFontInfo = document.getElementById('popFontInfo');
+    const popAlignInfo = document.getElementById('popAlignInfo');
+    const popInput = document.getElementById('popInput');
+    const popSaveBtn = document.getElementById('popSaveBtn');
+    const popAddLineBtn = document.getElementById('popAddLineBtn');
+    const popCloseBtn = document.getElementById('popCloseBtn');
+
+    const applyBtn = document.getElementById('applyBtn');
+    const resetEditsBtn = document.getElementById('resetEditsBtn');
+    const pendingCountBadge = document.getElementById('pendingCountBadge');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const statusBanner = document.getElementById('statusBanner');
+
+    const searchCellsInput = document.getElementById('searchCellsInput');
+    const colFilterSelect = document.getElementById('colFilterSelect');
+    const showEmptyInTableToggle = document.getElementById('showEmptyInTableToggle');
+    const cellListContainer = document.getElementById('cellListContainer');
+    const selCountLabel = document.getElementById('selCountLabel');
+    const instructionsInput = document.getElementById('instructionsInput');
+
+    // Mode tabs switching
+    document.querySelectorAll('.mode-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.mode-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-pane').forEach(p => p.style.display = 'none');
+        tab.classList.add('active');
+        document.getElementById(tab.dataset.tab).style.display = 'block';
+      });
+    });
+
+    function copyToSmartClipboard(val) {
+      if (!val || !val.trim()) return;
+      const clean = val.trim();
+      clipboardHistory = [clean, ...clipboardHistory.filter(x => x !== clean)].slice(0, 30);
+      try { navigator.clipboard.writeText(clean); } catch (_) {}
+      renderClipboardChips();
+    }
+
+    function renderClipboardChips() {
+      const container = document.getElementById('clipboardChipsContainer');
+      if (!container) return;
+      if (!clipboardHistory.length) {
+        container.innerHTML = '<span style="color:var(--muted);font-size:11px">Clipboard is empty. Copy cell values or load a PDF to populate smart snippets.</span>';
+        return;
+      }
+      container.innerHTML = clipboardHistory.map(item => `
+        <button type="button" class="btn btn-sm" style="background:#fff;border-color:#93c5fd;color:#1e40af;font-family:var(--mono);font-size:11px;padding:2px 8px" title="Click to copy / insert into active input">
+          ${escapeHtml(item.length > 25 ? item.substring(0, 25) + '…' : item)}
+        </button>
+      `).join('');
+      container.querySelectorAll('button').forEach((btn, idx) => {
+        btn.addEventListener('click', () => {
+          const val = clipboardHistory[idx];
+          try { navigator.clipboard.writeText(val); } catch (_) {}
+          if (popInput && inlinePopover.style.display !== 'none') {
+            popInput.value = val;
+            popInput.focus();
+          }
+          showStatus(`Copied "${val}" to system clipboard.`, 'ok');
+        });
+      });
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function populateSmartAutocomplete(intel) {
+      const datalist = document.getElementById('smartAutocompleteList');
+      if (!datalist || !intel) return;
+      const phrases = intel.autocomplete_phrases || [];
+      const tokens = intel.autocomplete_tokens || [];
+      const combined = [...new Set([...phrases, ...tokens])];
+      datalist.innerHTML = combined.map(c => `<option value="${escapeHtml(c)}"></option>`).join('');
+
+      // Also seed smart snippets into clipboard if empty
+      if (!clipboardHistory.length && phrases.length) {
+        clipboardHistory = phrases.slice(0, 15);
+        renderClipboardChips();
+      }
+    }
+
+    async function triggerAutoCalculation() {
+      if (!autoCalcEnabled || !pdfState) return;
+      const intel = pdfState.intelligence || {};
+      const rules = intel.dependency_rules || [];
+      if (!rules.length) return;
+
+      const allSpans = [];
+      pdfState.pages.forEach(p => allSpans.push(...p.spans));
+      const currentEditsList = [...pendingEdits.values()];
+
+      try {
+        const res = await fetch('/api/intelligence/recompute', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            current_edits: currentEditsList,
+            all_spans: allSpans,
+            dependency_rules: rules,
+          }),
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        const autoEdits = data.auto_edits || [];
+        let newlyComputed = 0;
+        autoEdits.forEach(ae => {
+          const key = `span:${ae.span_id}`;
+          const cur = pendingEdits.get(key);
+          if (!cur || cur.new !== ae.new) {
+            pendingEdits.set(key, ae);
+            newlyComputed++;
+          }
+        });
+        if (newlyComputed > 0) {
+          renderCurrentPage();
+          updatePendingUI();
+          showStatus(`⚡ Auto-Calculator recalculated ${newlyComputed} dependent value(s) (products / subtotals).`, 'ok');
+        }
+      } catch (_) {}
+    }
+
+    function getActiveDiscrepancies() {
+      if (!pdfState) return [];
+      const intel = pdfState.intelligence || {};
+      const baseDiscrepancies = intel.discrepancies || [];
+      const rules = intel.dependency_rules || [];
+
+      const allSpans = pdfState.pages.flatMap(p => p.spans);
+      const spanMap = new Map(allSpans.map(s => [s.id, { ...s }]));
+      pendingEdits.forEach((e, k) => {
+        if (e.span_id && spanMap.has(e.span_id)) {
+          spanMap.get(e.span_id).text = e.new;
+        }
+      });
+
+      const result = [];
+      const coveredTargetIds = new Set();
+
+      baseDiscrepancies.forEach(d => {
+        const curText = spanMap.get(d.span_id)?.text;
+        if (curText) {
+          const numCur = parseFloat(curText.replace(/[^0-9.-]/g, ''));
+          const numSugg = parseFloat(d.suggested_text.replace(/[^0-9.-]/g, ''));
+          if (!isNaN(numCur) && !isNaN(numSugg) && Math.abs(numCur - numSugg) < 0.01) {
+            return; // Fixed by pending edit
+          }
+        }
+        result.push(d);
+        coveredTargetIds.add(d.span_id);
+      });
+
+      rules.forEach(r => {
+        if (coveredTargetIds.has(r.target_id)) return;
+        const targetSpan = spanMap.get(r.target_id);
+        if (!targetSpan) return;
+        const sourceVals = r.source_ids.map(sid => {
+          const t = spanMap.get(sid)?.text;
+          if (!t) return null;
+          const clean = t.replace(/[^0-9.-]/g, '');
+          const val = parseFloat(clean);
+          return isNaN(val) ? null : val;
+        });
+        if (sourceVals.some(v => v === null)) return;
+
+        let expected = 0;
+        if (r.operation === 'multiply' && sourceVals.length === 2) expected = sourceVals[0] * sourceVals[1];
+        else if (r.operation === 'sum') expected = sourceVals.reduce((a, b) => a + b, 0);
+        else if (r.operation === 'subtract' && sourceVals.length === 2) expected = sourceVals[0] - sourceVals[1];
+
+        const targetClean = targetSpan.text.replace(/[^0-9.-]/g, '');
+        const targetVal = parseFloat(targetClean);
+        if (!isNaN(targetVal) && Math.abs(expected - targetVal) > 0.02) {
+          const prefix = targetSpan.text.includes('$') ? '$' : '';
+          const formatted = `${prefix}${expected.toFixed(2)}`;
+          result.push({
+            type: 'math_mismatch',
+            severity: 'error',
+            span_id: r.target_id,
+            page: targetSpan.page,
+            old_text: targetSpan.text,
+            suggested_text: formatted,
+            reason: `Arithmetic discrepancy: calculated ${formatted} vs document text ${targetSpan.text}`,
+          });
+          coveredTargetIds.add(r.target_id);
+        }
+      });
+
+      return result;
+    }
+
+    function renderQaAuditTab() {
+      if (!pdfState) return;
+      const intel = pdfState.intelligence || {};
+      const discList = getActiveDiscrepancies();
+      const rules = intel.dependency_rules || [];
+
+      const badge = document.getElementById('qaDiscrepancyBadge');
+      badge.textContent = `${discList.length} issue${discList.length === 1 ? '' : 's'}`;
+      badge.style.background = discList.length ? '#fef2f2' : '#f0fdf4';
+      badge.style.color = discList.length ? '#991b1b' : '#166534';
+
+      const discContainer = document.getElementById('qaDiscrepanciesList');
+      if (!discList.length) {
+        discContainer.innerHTML = '<div style="padding:14px;background:#f0fdf4;color:#166534;border:1px solid #bbf7d0;border-radius:6px;font-size:12px;font-weight:600">✓ Quality Check Passed: No spelling errors or arithmetic discrepancies detected!</div>';
+      } else {
+        discContainer.innerHTML = discList.map((d, i) => `
+          <div style="padding:8px 10px;border:1px solid ${d.severity === 'error' ? '#fecaca' : '#fed7aa'};background:${d.severity === 'error' ? '#fff1f2' : '#fffbeb'};border-radius:6px;font-size:12px;display:flex;justify-content:space-between;align-items:center;gap:8px">
+            <div>
+              <span class="badge" style="background:${d.severity === 'error' ? '#ef4444' : '#f97316'};color:#fff;margin-right:4px">${d.type.toUpperCase()}</span>
+              <strong>Page ${d.page}</strong>: ${escapeHtml(d.reason)}
+              <div style="font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-top:2px">"${escapeHtml(d.old_text)}" → <span style="color:#166534;font-weight:700">"${escapeHtml(d.suggested_text)}"</span></div>
+            </div>
+            <button type="button" class="btn btn-sm btn-primary fix-single-btn" data-idx="${i}">Fix</button>
+          </div>
+        `).join('');
+
+        discContainer.querySelectorAll('.fix-single-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const d = discList[parseInt(btn.dataset.idx, 10)];
+            const key = `span:${d.span_id}`;
+            const targetSpan = pdfState.pages.flatMap(p => p.spans).find(s => s.id === d.span_id);
+            if (targetSpan) {
+              pendingEdits.set(key, {
+                action: 'replace',
+                page: targetSpan.page,
+                old: targetSpan.text,
+                new: d.suggested_text,
+                bbox: targetSpan.bbox,
+                align: targetSpan.align,
+                max_width: targetSpan.max_width,
+                span_id: d.span_id,
+              });
+              renderCurrentPage();
+              updatePendingUI();
+              renderQaAuditTab();
+              showStatus(`Fixed ${d.type} discrepancy on page ${targetSpan.page}: "${d.old_text}" → "${d.suggested_text}".`, 'ok');
+            }
+          });
+        });
+      }
+
+      const formContainer = document.getElementById('qaFormulasList');
+      if (!rules.length) {
+        formContainer.innerHTML = '<div class="EmptyState" style="padding:14px">No arithmetic dependency relationships detected.</div>';
+      } else {
+        formContainer.innerHTML = rules.map(r => `
+          <div style="padding:7px 10px;background:#f8fafc;border:1px solid var(--line);border-radius:6px;font-size:12px;font-family:var(--mono)">
+            <span class="badge" style="background:#dbeafe;color:#1e40af;margin-right:4px">${r.type.toUpperCase()}</span>
+            ${escapeHtml(r.description)}
+          </div>
+        `).join('');
+      }
+    }
+
+    document.getElementById('qaTabBtn').addEventListener('click', renderQaAuditTab);
+
+    document.getElementById('autoFixDiscrepanciesBtn').addEventListener('click', () => {
+      if (!pdfState) return;
+      const discList = getActiveDiscrepancies();
+      if (!discList.length) {
+        showStatus('No discrepancies detected to correct.', 'ok');
+        return;
+      }
+      let fixed = 0;
+      discList.forEach(d => {
+        const key = `span:${d.span_id}`;
+        const targetSpan = pdfState.pages.flatMap(p => p.spans).find(s => s.id === d.span_id);
+        if (targetSpan) {
+          pendingEdits.set(key, {
+            action: 'replace',
+            page: targetSpan.page,
+            old: targetSpan.text,
+            new: d.suggested_text,
+            bbox: targetSpan.bbox,
+            align: targetSpan.align,
+            max_width: targetSpan.max_width,
+            span_id: d.span_id,
+          });
+          fixed++;
+        }
+      });
+      renderCurrentPage();
+      updatePendingUI();
+      renderQaAuditTab();
+      showStatus(`🪄 Automatically corrected ${fixed} document discrepancies! Click Apply Precision Edits to commit.`, 'ok');
+    });
+
+    document.getElementById('recalcNowBtn').addEventListener('click', () => {
+      triggerAutoCalculation();
+    });
+
+    document.getElementById('clipboardHistoryBtn').addEventListener('click', () => {
+      const drawer = document.getElementById('clipboardDrawer');
+      drawer.classList.toggle('open');
+      renderClipboardChips();
+    });
+
+    document.getElementById('closeClipboardDrawerBtn').addEventListener('click', () => {
+      document.getElementById('clipboardDrawer').classList.remove('open');
+    });
+
+    document.getElementById('autoCalcToggle').addEventListener('change', (e) => {
+      autoCalcEnabled = e.target.checked;
+      if (autoCalcEnabled) triggerAutoCalculation();
+    });
+
+    function showStatus(msg, kind = 'ok') {
+      if (!msg) {
+        statusBanner.className = 'status-banner';
+        statusBanner.style.display = 'none';
+        return;
+      }
+      statusBanner.textContent = msg;
+      statusBanner.className = 'status-banner ' + (kind === 'error' ? 'error' : 'ok');
+      statusBanner.style.display = 'block';
+    }
+
+    function updatePendingUI() {
+      const textLines = instructionsInput.value.trim()
+        ? instructionsInput.value.trim().split('\n').filter(l => l.trim() && !l.trim().startsWith('//')).length
+        : 0;
+      const total = pendingEdits.size + textLines;
+      if (total > 0) {
+        pendingCountBadge.style.display = 'inline-block';
+        pendingCountBadge.textContent = `${total} pending edit${total === 1 ? '' : 's'}`;
+        resetEditsBtn.style.display = 'inline-flex';
+      } else {
+        pendingCountBadge.style.display = 'none';
+        resetEditsBtn.style.display = 'none';
+      }
+      applyBtn.disabled = (!pdfState && !currentFile) || total === 0;
+    }
+
+    instructionsInput.addEventListener('input', updatePendingUI);
+
+    resetEditsBtn.addEventListener('click', () => {
+      pendingEdits.clear();
+      instructionsInput.value = '';
+      closePopover();
+      renderCurrentPage();
+      updatePendingUI();
+      showStatus('');
+    });
+
+    // Inspect uploaded PDF
+    fileInput.addEventListener('change', async () => {
+      if (!fileInput.files || !fileInput.files[0]) return;
+      currentFile = fileInput.files[0];
+      fileLabel.textContent = `📄 ${currentFile.name}`;
+      pendingEdits.clear();
+      selectedKeys.clear();
+      await runInspect(true);
+    });
+
+    async function runInspect(fromNewFile = false) {
+      if (!currentFile && !sessionToken) return;
+      showStatus('Inspecting PDF typography, baselines, and column grid…', 'ok');
+      const fd = new FormData();
+      if (fromNewFile && currentFile) {
+        fd.append('file', currentFile);
+      } else if (sessionToken) {
+        fd.append('session_token', sessionToken);
+      } else if (currentFile) {
+        fd.append('file', currentFile);
+      }
+      fd.append('clean_overlays', document.getElementById('cleanOverlaysToggle').checked ? 'true' : 'false');
+
+      try {
+        const res = await fetch('/api/inspect', { method: 'POST', body: fd });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.detail || 'Failed to inspect PDF');
+        pdfState = body;
+        sessionToken = body.session_token;
+        if (currentPageIdx >= pdfState.pages.length) currentPageIdx = 0;
+        populateSmartAutocomplete(body.intelligence);
+        renderPageTabs();
+        renderCurrentPage();
+        renderQaAuditTab();
+        updatePendingUI();
+        const cleanedMsg = (body.overlay_pages_cleaned && body.overlay_pages_cleaned.length)
+          ? ` (Auto-cleaned obstructing stamp overlays on page ${body.overlay_pages_cleaned.join(', ')})`
+          : '';
+        showStatus(`Loaded ${body.pages_count} page(s) with strict baseline & column grid lock.${cleanedMsg}`, 'ok');
+      } catch (err) {
+        showStatus(err.message, 'error');
+      }
+    }
+
+    function renderPageTabs() {
+      pageTabs.innerHTML = '';
+      if (!pdfState) return;
+      pdfState.pages.forEach((p, idx) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'page-tab' + (idx === currentPageIdx ? ' active' : '');
+        btn.textContent = `Page ${p.page}`;
+        btn.addEventListener('click', () => {
+          currentPageIdx = idx;
+          closePopover();
+          renderPageTabs();
+          renderCurrentPage();
+        });
+        pageTabs.appendChild(btn);
+      });
+    }
+
+    function populateColumnSelect(pageObj) {
+      const prev = colFilterSelect.value;
+      colFilterSelect.innerHTML = '<option value="all">All Columns & Sections</option>';
+      pageObj.columns.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = String(c.col_id);
+        opt.textContent = `Col ${c.col_id}: ${c.align.toUpperCase()} @ x=${c.anchor_x} (${c.clean_font} ${c.size}pt)`;
+        colFilterSelect.appendChild(opt);
+      });
+      if ([...colFilterSelect.options].some(o => o.value === prev)) {
+        colFilterSelect.value = prev;
+      }
+    }
+
+    function renderCurrentPage() {
+      if (!pdfState || !pdfState.pages[currentPageIdx]) return;
+      const pageObj = pdfState.pages[currentPageIdx];
+      emptyCanvasState.style.display = 'none';
+      pageStage.style.display = 'inline-block';
+      pageImage.src = pageObj.image;
+      pageMetaLabel.textContent = `Page ${pageObj.page}/${pdfState.pages_count} • ${pageObj.spans.length} cells • ${pageObj.columns.length} grid cols • Line step ${pageObj.line_step}pt`;
+      populateColumnSelect(pageObj);
+      renderCanvasOverlays(pageObj);
+      renderCellTable(pageObj);
+    }
+
+    function renderCanvasOverlays(pageObj) {
+      overlayLayer.innerHTML = '';
+      const pw = pageObj.width;
+      const ph = pageObj.height;
+      const showCells = document.getElementById('showCellsToggle').checked;
+      const showSlots = document.getElementById('showSlotsToggle').checked;
+      const showRails = document.getElementById('showRailsToggle').checked;
+
+      if (showRails) {
+        pageObj.columns.forEach(col => {
+          const rail = document.createElement('div');
+          rail.className = 'grid-rail' + (col.align === 'right' ? ' right-rail' : '');
+          rail.style.left = `${(col.anchor_x / pw) * 100}%`;
+          overlayLayer.appendChild(rail);
+        });
+      }
+
+      if (showCells) {
+        pageObj.spans.forEach(sp => {
+          const key = `span:${sp.id}`;
+          const div = document.createElement('div');
+          div.className = 'cell-box'
+            + (pendingEdits.has(key) ? ' modified' : '')
+            + (selectedKeys.has(key) ? ' selected' : '')
+            + (sp.rotation ? ' vertical' : '');
+          const [x0, y0, x1, y1] = sp.bbox;
+          div.style.left = `${(x0 / pw) * 100}%`;
+          div.style.top = `${(y0 / ph) * 100}%`;
+          div.style.width = `${Math.max(1.2, ((x1 - x0) / pw) * 100)}%`;
+          div.style.height = `${Math.max(1.0, ((y1 - y0) / ph) * 100)}%`;
+          div.title = sp.rotation
+            ? `${sp.text} (${sp.clean_font} ${sp.size}pt, Vertical ${sp.rotation}° @ x=${sp.anchor_x}, y=${sp.y})`
+            : `${sp.text} (${sp.clean_font} ${sp.size}pt, ${sp.align}-aligned @ x=${sp.anchor_x}, y=${sp.y})`;
+          div.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            if (ev.shiftKey) {
+              toggleSelectKey(key);
+              return;
+            }
+            openPopoverForSpan(sp, div);
+          });
+          overlayLayer.appendChild(div);
+        });
+      }
+
+      if (showSlots) {
+        pageObj.empty_slots.forEach(slot => {
+          const key = `slot:${slot.slot_id}`;
+          const div = document.createElement('div');
+          div.className = 'slot-box' + (pendingEdits.has(key) ? ' modified' : '');
+          const [x0, y0, x1, y1] = slot.bbox;
+          div.style.left = `${(x0 / pw) * 100}%`;
+          div.style.top = `${(y0 / ph) * 100}%`;
+          div.style.width = `${Math.max(2.0, ((x1 - x0) / pw) * 100)}%`;
+          div.style.height = `${Math.max(1.1, ((y1 - y0) / ph) * 100)}%`;
+          const pending = pendingEdits.get(key);
+          div.textContent = pending ? pending.new : '+';
+          div.title = `Insert grid-locked text (${slot.clean_font} ${slot.size}pt, ${slot.align} @ x=${slot.anchor_x}, y=${slot.y})`;
+          div.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            openPopoverForSlot(slot, div);
+          });
+          overlayLayer.appendChild(div);
+        });
+      }
+    }
+
+    function openPopoverForSpan(sp, boxEl) {
+      const key = `span:${sp.id}`;
+      activePopoverTarget = { kind: 'span', key, item: sp };
+      popFontInfo.textContent = `${sp.clean_font} ${sp.size}pt (${sp.color})`;
+      popAlignInfo.textContent = sp.rotation
+        ? `VERTICAL (${sp.rotation}°) @ x=${sp.anchor_x}, y=${sp.y}`
+        : `${sp.align.toUpperCase()} @ x=${sp.anchor_x}, y=${sp.y}`;
+      const existing = pendingEdits.get(key);
+      popInput.value = existing !== undefined ? existing.new : sp.text;
+      popInput.setAttribute('list', 'smartAutocompleteList');
+      copyToSmartClipboard(sp.text);
+      popAddLineBtn.style.display = (sp.align === 'left' && !sp.rotation) ? 'inline-flex' : 'none';
+      positionPopover(boxEl);
+    }
+
+    function openPopoverForSlot(slot, boxEl) {
+      const key = `slot:${slot.slot_id}`;
+      activePopoverTarget = { kind: 'slot', key, item: slot };
+      popFontInfo.textContent = `INSERT • ${slot.clean_font} ${slot.size}pt`;
+      popAlignInfo.textContent = `${slot.align.toUpperCase()} @ x=${slot.anchor_x}, y=${slot.y}`;
+      const existing = pendingEdits.get(key);
+      popInput.value = existing !== undefined ? existing.new : '';
+      popInput.setAttribute('list', 'smartAutocompleteList');
+      popAddLineBtn.style.display = 'none';
+      positionPopover(boxEl);
+    }
+
+    function positionPopover(boxEl) {
+      inlinePopover.style.display = 'block';
+      const leftPct = parseFloat(boxEl.style.left) || 10;
+      const topPct = parseFloat(boxEl.style.top) || 10;
+      inlinePopover.style.left = `${Math.min(62, Math.max(2, leftPct))}%`;
+      inlinePopover.style.top = `${Math.min(88, topPct + 2.2)}%`;
+      setTimeout(() => { popInput.focus(); popInput.select(); }, 20);
+    }
+
+    function closePopover() {
+      inlinePopover.style.display = 'none';
+      activePopoverTarget = null;
+    }
+
+    popCloseBtn.addEventListener('click', closePopover);
+
+    function commitPopoverEdit() {
+      if (!activePopoverTarget) return;
+      const { kind, key, item } = activePopoverTarget;
+      const val = popInput.value;
+      if (kind === 'span') {
+        if (val === item.text) {
+          pendingEdits.delete(key);
+        } else {
+          pendingEdits.set(key, {
+            action: 'replace',
+            page: item.page,
+            old: item.text,
+            new: val,
+            bbox: item.bbox,
+            align: item.align,
+            max_width: item.max_width,
+          });
+        }
+      } else {
+        if (!val.trim()) {
+          pendingEdits.delete(key);
+        } else {
+          pendingEdits.set(key, {
+            action: 'insert',
+            page: item.page,
+            old: '',
+            new: val,
+            origin: [item.anchor_x, item.y],
+            bbox: item.bbox,
+            align: item.align,
+            font: item.font,
+            size: item.size,
+            color_int: item.color_int,
+            max_width: item.max_width,
+            strict_grid: false,
+          });
+        }
+      }
+      closePopover();
+      renderCurrentPage();
+      updatePendingUI();
+      triggerAutoCalculation();
+    }
+
+    popSaveBtn.addEventListener('click', commitPopoverEdit);
+    popInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); commitPopoverEdit(); }
+      if (e.key === 'Escape') { e.preventDefault(); closePopover(); }
+    });
+
+    popAddLineBtn.addEventListener('click', () => {
+      if (!activePopoverTarget || activePopoverTarget.kind !== 'span') return;
+      const sp = activePopoverTarget.item;
+      const pageObj = pdfState.pages[currentPageIdx];
+      const subY = +(sp.y + pageObj.line_step).toFixed(2);
+      const slotObj = {
+        slot_id: `sub_${sp.id}`,
+        page: sp.page,
+        anchor_x: sp.x0,
+        y: subY,
+        bbox: [sp.x0, subY - sp.size * 0.85, sp.x1, subY + sp.size * 0.2],
+        align: 'left',
+        font: sp.font,
+        clean_font: sp.clean_font,
+        size: sp.size,
+        color_int: sp.color_int,
+        max_width: sp.max_width,
+      };
+      activePopoverTarget = { kind: 'slot', key: `slot:${slotObj.slot_id}`, item: slotObj };
+      popFontInfo.textContent = `INSERT LINE BELOW • ${sp.clean_font} ${sp.size}pt`;
+      popAlignInfo.textContent = `LEFT @ x=${sp.x0}, y=${subY}`;
+      popInput.value = '';
+      popAddLineBtn.style.display = 'none';
+      popInput.focus();
+    });
+
+    function getFilteredItems(pageObj) {
+      const q = searchCellsInput.value.trim().toLowerCase();
+      const colFilter = colFilterSelect.value;
+      const includeEmpty = showEmptyInTableToggle.checked;
+
+      const items = [];
+      pageObj.spans.forEach(sp => {
+        if (colFilter !== 'all' && String(sp.col_id) !== colFilter) return;
+        const key = `span:${sp.id}`;
+        const edited = pendingEdits.get(key);
+        const curText = edited !== undefined ? edited.new : sp.text;
+        if (q && !sp.text.toLowerCase().includes(q) && !curText.toLowerCase().includes(q)) return;
+        items.push({ kind: 'span', key, y: sp.y, x: sp.x0, item: sp });
+      });
+
+      if (includeEmpty) {
+        pageObj.empty_slots.forEach(slot => {
+          if (colFilter !== 'all' && String(slot.col_id) !== colFilter) return;
+          const key = `slot:${slot.slot_id}`;
+          const edited = pendingEdits.get(key);
+          const curText = edited ? edited.new : '';
+          if (q && !curText.toLowerCase().includes(q)) return;
+          items.push({ kind: 'slot', key, y: slot.y, x: slot.anchor_x, item: slot });
+        });
+      }
+
+      items.sort((a, b) => (Math.abs(a.y - b.y) > 1.5 ? a.y - b.y : a.x - b.x));
+      return items;
+    }
+
+    function toggleSelectKey(key) {
+      if (selectedKeys.has(key)) selectedKeys.delete(key);
+      else selectedKeys.add(key);
+      selCountLabel.textContent = `${selectedKeys.size} selected`;
+      if (pdfState) renderCurrentPage();
+    }
+
+    function renderCellTable(pageObj) {
+      const items = getFilteredItems(pageObj);
+      cellListContainer.innerHTML = '';
+      selCountLabel.textContent = `${selectedKeys.size} selected`;
+
+      if (!items.length) {
+        cellListContainer.innerHTML = '<div class="EmptyState">No matching cells on this page.</div>';
+        return;
+      }
+
+      const inputsList = [];
+      items.forEach((entry, idx) => {
+        const { kind, key, item } = entry;
+        const row = document.createElement('div');
+        const pending = pendingEdits.get(key);
+        row.className = 'cell-row' + (pending ? (kind === 'slot' ? ' inserted' : ' edited') : '');
+
+        // Checkbox
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = selectedKeys.has(key);
+        cb.addEventListener('change', () => {
+          if (cb.checked) selectedKeys.add(key);
+          else selectedKeys.delete(key);
+          selCountLabel.textContent = `${selectedKeys.size} selected`;
+          renderCanvasOverlays(pageObj);
+        });
+
+        // Original info
+        const origWrap = document.createElement('div');
+        const origTitle = document.createElement('div');
+        origTitle.className = 'cell-orig';
+        origTitle.textContent = kind === 'span' ? item.text : `+ Empty Slot (Col ${item.col_id || '-'})`;
+        const metaSub = document.createElement('div');
+        metaSub.className = 'cell-meta-sub';
+        metaSub.textContent = item.rotation
+          ? `${item.clean_font} ${item.size}pt • Vertical (${item.rotation}°) • @ x=${item.anchor_x}, y=${item.y}`
+          : `${item.clean_font} ${item.size}pt • ${item.align} @ x=${item.anchor_x}, y=${item.y}`;
+        origWrap.appendChild(origTitle);
+        origWrap.appendChild(metaSub);
+
+        // Input
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.className = 'cell-input';
+        inp.value = pending !== undefined ? pending.new : (kind === 'span' ? item.text : '');
+        inp.setAttribute('list', 'smartAutocompleteList');
+        inp.placeholder = kind === 'span' ? '(empty = delete cell)' : '+ Type to insert in grid slot…';
+        inputsList.push(inp);
+
+        inp.addEventListener('focus', () => {
+          if (kind === 'span' && item.text) copyToSmartClipboard(item.text);
+        });
+
+        inp.addEventListener('input', () => {
+          const val = inp.value;
+          if (kind === 'span') {
+            if (val === item.text) {
+              pendingEdits.delete(key);
+              row.classList.remove('edited');
+            } else {
+              pendingEdits.set(key, {
+                action: 'replace',
+                page: item.page,
+                old: item.text,
+                new: val,
+                bbox: item.bbox,
+                align: item.align,
+                max_width: item.max_width,
+              });
+              row.classList.add('edited');
+            }
+          } else {
+            if (!val.trim()) {
+              pendingEdits.delete(key);
+              row.classList.remove('inserted');
+            } else {
+              pendingEdits.set(key, {
+                action: 'insert',
+                page: item.page,
+                old: '',
+                new: val,
+                origin: [item.anchor_x, item.y],
+                bbox: item.bbox,
+                align: item.align,
+                font: item.font,
+                size: item.size,
+                color_int: item.color_int,
+                max_width: item.max_width,
+                strict_grid: false,
+              });
+              row.classList.add('inserted');
+            }
+          }
+          renderCanvasOverlays(pageObj);
+          updatePendingUI();
+        });
+
+        inp.addEventListener('change', () => {
+          triggerAutoCalculation();
+        });
+
+        inp.addEventListener('keydown', (ev) => {
+          if (ev.key === 'Enter' || ev.key === 'ArrowDown') {
+            ev.preventDefault();
+            if (inputsList[idx + 1]) {
+              inputsList[idx + 1].focus();
+              inputsList[idx + 1].select();
+            }
+          } else if (ev.key === 'ArrowUp') {
+            ev.preventDefault();
+            if (inputsList[idx - 1]) {
+              inputsList[idx - 1].focus();
+              inputsList[idx - 1].select();
+            }
+          }
+        });
+
+        // Quick action button (+Line Below for left-aligned spans)
+        const actWrap = document.createElement('div');
+        if (kind === 'span' && item.align === 'left' && !item.rotation) {
+          const addBtn = document.createElement('button');
+          addBtn.type = 'button';
+          addBtn.className = 'btn btn-sm';
+          addBtn.title = 'Insert a grid-aligned line directly below this text';
+          addBtn.textContent = '+Line';
+          addBtn.addEventListener('click', () => {
+            const subY = +(item.y + pageObj.line_step).toFixed(2);
+            const val = prompt(`Insert new line below "${item.text}" (locked to ${item.clean_font} ${item.size}pt @ x=${item.x0}, y=${subY}):`);
+            if (val && val.trim()) {
+              const skey = `slot:sub_${item.id}`;
+              pendingEdits.set(skey, {
+                action: 'insert',
+                page: item.page,
+                old: '',
+                new: val.trim(),
+                anchor_text: item.text,
+                direction: 'below',
+                align: 'left',
+              });
+              updatePendingUI();
+              showStatus(`Queued grid-aligned line "${val.trim()}" below "${item.text}". Click Apply Precision Edits to render.`, 'ok');
+            }
+          });
+          actWrap.appendChild(addBtn);
+        }
+
+        row.appendChild(cb);
+        row.appendChild(origWrap);
+        row.appendChild(inp);
+        row.appendChild(actWrap);
+        cellListContainer.appendChild(row);
+      });
+    }
+
+    // Filter listeners
+    searchCellsInput.addEventListener('input', () => pdfState && renderCellTable(pdfState.pages[currentPageIdx]));
+    colFilterSelect.addEventListener('change', () => pdfState && renderCellTable(pdfState.pages[currentPageIdx]));
+    showEmptyInTableToggle.addEventListener('change', () => pdfState && renderCellTable(pdfState.pages[currentPageIdx]));
+    ['showCellsToggle', 'showSlotsToggle', 'showRailsToggle'].forEach(id => {
+      document.getElementById(id).addEventListener('change', () => pdfState && renderCanvasOverlays(pdfState.pages[currentPageIdx]));
+    });
+    document.getElementById('cleanOverlaysToggle').addEventListener('change', () => runInspect(false));
+
+    // Batch selection controls
+    document.getElementById('selAllBtn').addEventListener('click', () => {
+      if (!pdfState) return;
+      getFilteredItems(pdfState.pages[currentPageIdx]).forEach(it => selectedKeys.add(it.key));
+      renderCurrentPage();
+    });
+    document.getElementById('selNoneBtn').addEventListener('click', () => {
+      selectedKeys.clear();
+      if (pdfState) renderCurrentPage();
+    });
+
+    // Batch Drawer controls
+    const batchDrawer = document.getElementById('batchDrawer');
+    document.getElementById('openBatchReplaceBtn').addEventListener('click', () => {
+      batchDrawer.classList.toggle('open');
+    });
+    document.getElementById('closeBatchDrawerBtn').addEventListener('click', () => {
+      batchDrawer.classList.remove('open');
+    });
+
+    function getTargetBatchItems() {
+      if (!pdfState) return [];
+      const visible = getFilteredItems(pdfState.pages[currentPageIdx]);
+      const chosen = visible.filter(it => selectedKeys.has(it.key));
+      return chosen.length ? chosen : visible;
+    }
+
+    document.getElementById('runBatchReplaceBtn').addEventListener('click', () => {
+      const targets = getTargetBatchItems();
+      const findStr = document.getElementById('batchFindInput').value;
+      const replStr = document.getElementById('batchReplaceInput').value;
+      let count = 0;
+      targets.forEach(({ kind, key, item }) => {
+        if (kind === 'span') {
+          const base = pendingEdits.has(key) ? pendingEdits.get(key).new : item.text;
+          const next = findStr ? base.split(findStr).join(replStr) : replStr;
+          if (next !== item.text) {
+            pendingEdits.set(key, {
+              action: 'replace', page: item.page, old: item.text, new: next,
+              bbox: item.bbox, align: item.align, max_width: item.max_width,
+            });
+            count++;
+          }
+        } else if (!findStr && replStr.trim()) {
+          pendingEdits.set(key, {
+            action: 'insert', page: item.page, old: '', new: replStr.trim(),
+            origin: [item.anchor_x, item.y], bbox: item.bbox, align: item.align,
+            font: item.font, size: item.size, color_int: item.color_int,
+            max_width: item.max_width, strict_grid: false,
+          });
+          count++;
+        }
+      });
+      renderCurrentPage();
+      updatePendingUI();
+      triggerAutoCalculation();
+      showStatus(`Updated ${count} cell(s) in batch. Click "Apply Precision Edits" to commit.`, 'ok');
+    });
+
+    document.getElementById('runBatchPasteBtn').addEventListener('click', () => {
+      const targets = getTargetBatchItems();
+      const lines = document.getElementById('batchPasteList').value.split('\n').map(s => s.trim()).filter(Boolean);
+      if (!lines.length) return;
+      let count = 0;
+      targets.forEach(({ kind, key, item }, i) => {
+        if (i >= lines.length) return;
+        const val = lines[i];
+        if (kind === 'span') {
+          if (val !== item.text) {
+            pendingEdits.set(key, {
+              action: 'replace', page: item.page, old: item.text, new: val,
+              bbox: item.bbox, align: item.align, max_width: item.max_width,
+            });
+            count++;
+          }
+        } else {
+          pendingEdits.set(key, {
+            action: 'insert', page: item.page, old: '', new: val,
+            origin: [item.anchor_x, item.y], bbox: item.bbox, align: item.align,
+            font: item.font, size: item.size, color_int: item.color_int,
+            max_width: item.max_width, strict_grid: false,
+          });
+          count++;
+        }
+      });
+      renderCurrentPage();
+      updatePendingUI();
+      triggerAutoCalculation();
+      showStatus(`Filled ${count} cell(s) sequentially from list. Click "Apply Precision Edits" to commit.`, 'ok');
+    });
+
+    document.getElementById('batchDeleteBtn').addEventListener('click', () => {
+      if (!pdfState) return;
+      const visible = getFilteredItems(pdfState.pages[currentPageIdx]);
+      const chosen = visible.filter(it => selectedKeys.has(it.key) && it.kind === 'span');
+      if (!chosen.length) {
+        showStatus('Check at least one existing cell to delete.', 'error');
+        return;
+      }
+      chosen.forEach(({ key, item }) => {
+        pendingEdits.set(key, {
+          action: 'replace', page: item.page, old: item.text, new: '',
+          bbox: item.bbox, align: item.align,
+        });
+      });
+      renderCurrentPage();
+      updatePendingUI();
+      showStatus(`Marked ${chosen.length} selected cell(s) for deletion. Click "Apply Precision Edits" to commit.`, 'ok');
+    });
+
+    // Apply Precision Edits
+    applyBtn.addEventListener('click', async () => {
+      applyBtn.disabled = true;
+      showStatus('Applying grid-locked vector edits & verifying pixel integrity…', 'ok');
+      const fd = new FormData();
+      if (sessionToken) {
+        fd.append('session_token', sessionToken);
+      } else if (currentFile) {
+        fd.append('file', currentFile);
+      }
+      fd.append('instructions', instructionsInput.value || '');
+      fd.append('structured_edits', JSON.stringify([...pendingEdits.values()]));
+      fd.append('clean_overlays', document.getElementById('cleanOverlaysToggle').checked ? 'true' : 'false');
+
+      try {
+        const res = await fetch('/api/edit', { method: 'POST', body: fd });
+        const body = await res.json();
+        if (!res.ok) throw new Error(body.detail || 'Edit failed');
+
+        sessionToken = body.session_token;
+        pdfState = body.inspected;
+        pendingEdits.clear();
+        selectedKeys.clear();
+        instructionsInput.value = '';
+        downloadBtn.href = body.download_url;
+        downloadBtn.style.display = 'inline-flex';
+
+        const beforeImg = document.getElementById('beforeImg');
+        const afterImg = document.getElementById('afterImg');
+        beforeImg.src = body.before_image;
+        afterImg.src = body.after_image;
+        beforeImg.style.display = 'block';
+        afterImg.style.display = 'block';
+        document.getElementById('verificationSummary').textContent =
+          `${body.validation} (${body.edits.length} edit(s) applied across ${body.pages} page(s)).`;
+
+        renderPageTabs();
+        renderCurrentPage();
+        updatePendingUI();
+        showStatus(`✓ Applied ${body.edits.length} precision edit(s). ${body.validation} Click "Download PDF" in the top bar.`, 'ok');
+      } catch (err) {
+        showStatus(err.message, 'error');
+        updatePendingUI();
+      }
+    });
+
+    // Self-Improvement Kernel UI Logic
+    async function loadKernelStatus() {
+      try {
+        const res = await fetch('/api/kernel/status');
+        if (!res.ok) return;
+        const st = await res.json();
+        renderKernelStatus(st);
+      } catch (_) {}
+    }
+
+    function renderKernelStatus(st) {
+      document.getElementById('kernelChampLabel').textContent = `${st.active_champion} [${st.config_hash}]`;
+      document.getElementById('kernelHarnessPre').textContent = JSON.stringify(st.harness, null, 2);
+      const grid = document.getElementById('kernelMetricsGrid');
+      grid.innerHTML = [
+        ['Traced Runs', st.total_traced_runs],
+        ['Mean 3-Tier Score', st.mean_overall_score.toFixed(4)],
+        ['Tier-1 Pass Rate', `${(st.tier1_invariant_pass_rate * 100).toFixed(1)}%`],
+        ['Open / Fixed Clusters', `${st.open_clusters.length} / ${st.resolved_clusters.length}`],
+      ].map(([k, v]) => `
+        <div style="padding:8px 10px;border:1px solid var(--line);border-radius:6px;background:#fcfdfd">
+          <div style="font-size:11px;color:var(--muted)">${k}</div>
+          <div style="font-weight:800;font-size:15px;font-family:var(--mono)">${v}</div>
+        </div>
+      `).join('');
+
+      const promoEl = document.getElementById('kernelPromotionsList');
+      promoEl.innerHTML = (st.promotions && st.promotions.length)
+        ? st.promotions.map(p => `
+            <div style="padding:6px 8px;border-radius:5px;border:1px solid ${p.promoted ? '#bbf7d0' : '#fecaca'};background:${p.promoted ? '#f0fdf4' : '#fef2f2'}">
+              <strong>${p.promoted ? '✓ PROMOTED' : '✗ REJECTED'}</strong> ${p.champion_version} → ${p.challenger_version}<br/>
+              <span style="color:var(--muted)">${p.reason}</span>
+            </div>
+          `).join('')
+        : '<div style="color:var(--muted)">No tournament promotions recorded yet.</div>';
+
+      const clustEl = document.getElementById('kernelClustersList');
+      const allClust = [...(st.open_clusters || []), ...(st.resolved_clusters || [])];
+      clustEl.innerHTML = allClust.length
+        ? allClust.map(c => `
+            <div style="padding:6px 8px;border-radius:5px;border:1px solid var(--line);background:#fff">
+              <span class="badge" style="background:${c.status === 'resolved' ? '#dcfce7' : '#fef3c7'};color:${c.status === 'resolved' ? '#166534' : '#92400e'}">${c.status.toUpperCase()}</span>
+              <strong>${c.pattern_signature}</strong> (${c.occurrences}x)
+              ${c.resolved_by_version ? `<span style="color:var(--muted)">→ fixed by ${c.resolved_by_version}</span>` : ''}
+            </div>
+          `).join('')
+        : '<div style="color:var(--muted)">0 defect clusters.</div>';
+    }
+
+    document.getElementById('kernelTabBtn').addEventListener('click', loadKernelStatus);
+
+    document.getElementById('runKernelCycleBtn').addEventListener('click', async () => {
+      showStatus('Running 5-stage Self-Improvement Cycle (Evaluate → Cluster → Synthesize → Benchmark → Promote)…', 'ok');
+      const res = await fetch('/api/kernel/run-cycle', { method: 'POST' });
+      const data = await res.json();
+      renderKernelStatus(data.status);
+      showStatus(`✓ Self-Improvement Cycle complete. Active Champion: ${data.status.active_champion} (Golden Score: ${data.report.champion_benchmark.mean_score})`, 'ok');
+    });
+
+    document.getElementById('simKernelTournamentBtn').addEventListener('click', async () => {
+      showStatus('Simulating naive v1.0.0 baseline failure cluster & executing autonomous Challenger tournament…', 'ok');
+      const res = await fetch('/api/kernel/simulate-defect', { method: 'POST' });
+      const data = await res.json();
+      renderKernelStatus(data.status);
+      const dec = (data.report.decisions && data.report.decisions[0]) || {};
+      showStatus(`✓ Self-Healing Tournament complete: ${dec.reason || 'Challenger promoted'}`, 'ok');
+    });
+
+    document.getElementById('rollbackKernelBtn').addEventListener('click', async () => {
+      const res = await fetch('/api/kernel/rollback', { method: 'POST' });
+      const data = await res.json();
+      renderKernelStatus(data.status);
+      showStatus(`Rolled back active Champion to ${data.status.active_champion}`, 'ok');
+    });
+
+    loadKernelStatus();
+
+  </script>
+</body>
+</html>
