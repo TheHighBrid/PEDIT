@@ -1,0 +1,31 @@
+PRECISIONPDF: RESTORED CLASSIC EDITOR + TARGETED FONT RESOURCE FIX
+
+This package starts from the user-provided PrecisionPDF.zip and from the
+previously restored working classic application. The original visual canvas,
+structured editing interface, local API and macOS launch script are unchanged.
+
+Changed files:
+  engine.py: exact / case-folded / punctuation-insensitive PDF font matching
+             in that order. Duplicate resource aliases pointing to the same
+             xref are safe and are no longer treated as ambiguous. Truly
+             different font objects remain separate and are not guessed.
+             Text extraction validation can now verify Unicode native glyphs
+             at the intended baseline if get_text() flattens/reorders text.
+             OCR and visible pixels are NOT accepted as proof of selectability.
+  tests/test_font_resource_regressions.py: new focused tests.
+
+The actual PDF that produced the Futura name and '$2.49' errors has not been
+provided. The matching issue was reproduced and fixed in an independent PDF
+with two aliases for the same embedded font. A different Futura font encoding
+or incomplete /ToUnicode map may still require document-specific engineering.
+The app refuses to save a PDF when its Unicode extraction genuinely fails.
+
+Validation: 36 pytest tests pass; full HTTP inspect/edit/download workflow
+passes on a synthetic PDF with duplicate font resource aliases.
+No user document is included in this archive, and the Mac security settings
+are not bypassed. This has not been executed on the user's own Mac.
+
+Use:
+  unzip PrecisionPDF_FONTFIX.zip
+  cd PrecisionPDF-fontfix
+  zsh start_mac.command

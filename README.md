@@ -1,4 +1,45 @@
-# Pedit 0.2: precision edits with export verification
+# PEDIT: classic visual editor
+
+The classic editor approved by the owner is now available from `classic.app:app`.
+It retains the original on-page green selection boxes, blue insertion slots, font
+list, and inline editing workflow. The previous V0.2 strict editor remains in
+the repository for compatibility and its existing tests; the macOS launcher
+now opens the classic editor by default.
+
+## Launch the classic editor
+
+```bash
+zsh start_mac.command
+```
+
+Choose 1 for local editing, or 2 for authenticated remote access. A remote
+session requires an installed `cloudflared`; it creates a fresh password and
+shows the new temporary HTTPS URL in Terminal. Keep the Mac running and the
+terminal open. The launcher checks the local server and starts Cloudflare only
+after the correct PEDIT instance responds. If either process exits, the other
+is stopped. Closing the laptop lid can still interrupt remote access.
+
+For Linux/Windows, install `requirements.txt` in an isolated environment and run
+`python launch_classic.py`. Use `--remote` for remote access and `--port` to
+select a different local port. Use private, authorized access only; temporary
+tunnels are not a hardened multi-user hosting service. For persistent access,
+prefer a managed tunnel protected by Cloudflare Access.
+
+Classic exports preserve visible source artwork, refuse signed or certified
+PDFs, display an edited-copy label, and report original/output hashes and real
+revision metadata. These are revised documents, not authenticated originals.
+The classic editor's verification is distinct from the strict engine's 300 DPI
+gate below. Arabic contextual shaping, arbitrary-angle text, true tracking,
+and decoration resizing are not yet complete in classic mode.
+
+### Verification
+
+Run `python -m pytest -q` from the repository root for both engines and launcher
+tests. Run `node --test src/tests/ui.test.cjs` for the legacy UI suite.
+
+---
+
+# Legacy Pedit 0.2: precision edits with export verification
 
 Pedit is a local web app for conservative text replacement in digitally generated PDFs. It reuses the original font and measured typography, preserves surrounding artwork, and withholds output when its checks fail. It uses no external AI or API keys.
 
